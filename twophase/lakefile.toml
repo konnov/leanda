@@ -1,0 +1,10 @@
+name = "twophase"
+version = "0.1.0"
+defaultTargets = ["twophase"]
+
+[[lean_lib]]
+name = "Twophase"
+
+[[lean_exe]]
+name = "twophase"
+root = "Main"
