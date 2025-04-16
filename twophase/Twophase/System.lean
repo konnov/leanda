@@ -24,6 +24,7 @@ inductive Action where
   | RMRcvAbortMsg(rm: RM)
   deriving DecidableEq, Repr
 
+/-- initialize the state of all resource managers to `Working` -/
 def init_rm_state (all: List RM): Std.HashMap RM RMState :=
   all.foldl
     (fun m rm => m.insert rm RMState.Working)
@@ -32,9 +33,7 @@ def init_rm_state (all: List RM): Std.HashMap RM RMState :=
 /-- The initial state of the protocol -/
 def init(all: List RM): ProtocolState RM := {
     all := all.toFinset,
-    -- initialize the state of all resource managers to `Working`
     rmState := init_rm_state RM all,
-    --rmState := Std.HashMap.emptyWithCapacity 0,
     tmState := TMState.Init,
     tmPrepared := ∅,
     msgs := ∅
