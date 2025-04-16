@@ -1,10 +1,15 @@
 name = "twophase"
 version = "0.1.0"
-defaultTargets = ["twophase"]
+keywords = ["math"]
+defaultTargets = ["Twophase"]
+
+[leanOptions]
+pp.unicode.fun = true # pretty-prints `fun a ↦ b`
+autoImplicit = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
 
 [[lean_lib]]
 name = "Twophase"
-
-[[lean_exe]]
-name = "twophase"
-root = "Main"
