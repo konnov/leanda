@@ -2,8 +2,9 @@
 
 This is a manual translation of Lamport's TLA<sup>+</sup> specification of
 [Two-phase commit][] into Lean 4. Since Lean 4 is not specifically designed for
-specifying distributed system, in contrast to TLA<sup>+</sup>, we have to make
-a few choices. In particular, we split the specification into two layers:
+specifying distributed systems &mdash; in contrast to TLA<sup>+</sup> &mdash; we
+have to make a few choices. In particular, we split the specification into two
+layers:
 
  - The functional layer: [Functional.lean][] specifies the steps of resource
  managers and the transaction manager as **functions**. Every such function

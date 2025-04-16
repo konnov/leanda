@@ -3,8 +3,6 @@ This is a specification of the system level of the two-phase commit protocol.
 
 Igor Konnov, 2025
 -/
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Finset.Fold
 import Twophase.Functional
 
 -- The abstract type of resource managers.
