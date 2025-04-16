@@ -6,8 +6,7 @@ entirely deterministic, that is, they are not actions in the TLA+ sense.
 We put together these definitions in the [System module](./System.lean).
 
 One important decision that we make here: If the function arguments are not
-applicable to a given state, we return the state unchanged. This aligns very
-well with the TLA+ approach, where stuttering is the default.
+applicable to a given state, we return `none`.
 
 Compare it with the
 [TLA+ specification](https://github.com/tlaplus/Examples/blob/master/specifications/transaction_commit/TwoPhase.tla).
