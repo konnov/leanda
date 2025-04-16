@@ -25,7 +25,7 @@ inductive Message where
     | Commit
     | Abort
     | Prepared(rm: RM)
-    deriving DecidableEq
+    deriving DecidableEq, Repr
 
 /-- A state of a resource manager. -/
 inductive RMState where
@@ -33,14 +33,14 @@ inductive RMState where
     | Prepared
     | Committed
     | Aborted
-    deriving DecidableEq
+    deriving DecidableEq, Repr
 
 /-- A state of the transaction manager. -/
 inductive TMState where
     | Init
     | Committed
     | Aborted
-    deriving DecidableEq
+    deriving DecidableEq, Repr
 
 /-- A state of the Two-phase commit protocol. -/
 structure ProtocolState where
@@ -53,53 +53,53 @@ structure ProtocolState where
     msgs: Finset (Message RM)
 
 /-- The transaction manager receives a `Prepared` message from a resource manager `rm`. -/
-def tmRcvPrepared (s: ProtocolState RM) (rm: RM): ProtocolState RM :=
-    if s.tmState = TMState.Init ∧ Message.Prepared rm ∈ s.msgs then {
+def tmRcvPrepared (s: ProtocolState RM) (rm: RM): Option (ProtocolState RM) :=
+    if s.tmState = TMState.Init ∧ Message.Prepared rm ∈ s.msgs then some {
         s with tmPrepared := s.tmPrepared ∪ { rm },
-    } else s
+    } else none
 
 /--
   The transaction manager commits the transaction. Enabled iff the TM is its initial
   state and every RM has sent a `Prepared` message.
  -/
-def tmCommit (s: ProtocolState RM): ProtocolState RM :=
-    if s.tmState = TMState.Init ∧ s.tmPrepared = s.all then {
+def tmCommit (s: ProtocolState RM): Option (ProtocolState RM) :=
+    if s.tmState = TMState.Init ∧ s.tmPrepared = s.all then some {
         s with
         tmState := TMState.Committed,
         msgs := s.msgs ∪ { Message.Commit }
-    } else s
+    } else none
 
 /-- The TM spontaneously aborts the transaction.  -/
-def tmAbort (s: ProtocolState RM): ProtocolState RM :=
-    if s.tmState = TMState.Init then {
+def tmAbort (s: ProtocolState RM): Option (ProtocolState RM) :=
+    if s.tmState = TMState.Init then some {
         s with
         tmState := TMState.Aborted,
         msgs := s.msgs ∪ { Message.Abort }
-    } else s
+    } else none
 
 /-- Resource manager `rm` prepares. -/
-def rmPrepare (s: ProtocolState RM) (rm: RM): ProtocolState RM :=
-    if s.rmState.get? rm = RMState.Working then {
+def rmPrepare (s: ProtocolState RM) (rm: RM): Option (ProtocolState RM) :=
+    if s.rmState.get? rm = RMState.Working then some {
         s with
         rmState := s.rmState.insert rm RMState.Prepared,
         msgs := s.msgs ∪ { Message.Prepared rm }
-    } else s
+    } else none
 
 /-- Resource manager $rm$ spontaneously decides to abort.  As noted above, `rm`
 does not send any message in our simplified spec. -/
-def rmChooseToAbort (s: ProtocolState RM) (rm: RM): ProtocolState RM :=
-    if s.rmState.get? rm = RMState.Working then {
+def rmChooseToAbort (s: ProtocolState RM) (rm: RM): Option (ProtocolState RM) :=
+    if s.rmState.get? rm = RMState.Working then some {
         s with rmState := s.rmState.insert rm RMState.Aborted,
-    } else s
+    } else none
 
 /-- Resource manager `rm` is told by the TM to commit. -/
-def rmRcvCommitMsg (s: ProtocolState RM) (rm: RM): ProtocolState RM :=
-    if Message.Commit ∈ s.msgs then {
+def rmRcvCommitMsg (s: ProtocolState RM) (rm: RM): Option (ProtocolState RM) :=
+    if Message.Commit ∈ s.msgs then some {
         s with rmState := s.rmState.insert rm RMState.Committed,
-    } else s
+    } else none
 
 /-- Resource manager `rm` is told by the TM to abort. -/
-def rmRcvAbortMsg(s: ProtocolState RM) (rm: RM): ProtocolState RM :=
-    if Message.Abort ∈ s.msgs then {
+def rmRcvAbortMsg (s: ProtocolState RM) (rm: RM): Option (ProtocolState RM) :=
+    if Message.Abort ∈ s.msgs then some {
         s with rmState := s.rmState.insert rm RMState.Aborted,
-    } else s
+    } else none

@@ -13,3 +13,7 @@ scope = "leanprover-community"
 
 [[lean_lib]]
 name = "Twophase"
+
+[[lean_exe]]
+name = "Twophase3"
+root = "Twophase3"
