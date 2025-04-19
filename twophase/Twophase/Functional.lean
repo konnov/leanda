@@ -55,9 +55,11 @@ structure ProtocolState where
 section defs
 -- The state `s` is a state of the protocol, explicitly added to all the functions.
 variable (s: ProtocolState RM)
+-- The result type of the functions: Either a new state, or `none` if the function is not applicable.
+abbrev NextState := Option (ProtocolState RM)
 
 /-- The transaction manager receives a `Prepared` message from a resource manager `rm`. -/
-def tmRcvPrepared (rm: RM): Option (ProtocolState RM) :=
+def tmRcvPrepared (rm: RM): NextState RM :=
     if s.tmState = TMState.Init ∧ Message.Prepared rm ∈ s.msgs then some {
         s with tmPrepared := s.tmPrepared ∪ { rm },
     } else none
@@ -66,7 +68,7 @@ def tmRcvPrepared (rm: RM): Option (ProtocolState RM) :=
   The transaction manager commits the transaction. Enabled iff the TM is its initial
   state and every RM has sent a `Prepared` message.
  -/
-def tmCommit: Option (ProtocolState RM) :=
+def tmCommit: NextState RM :=
     if s.tmState = TMState.Init ∧ s.tmPrepared = s.all then some {
         s with
         tmState := TMState.Committed,
@@ -74,7 +76,7 @@ def tmCommit: Option (ProtocolState RM) :=
     } else none
 
 /-- The TM spontaneously aborts the transaction.  -/
-def tmAbort: Option (ProtocolState RM) :=
+def tmAbort: NextState RM :=
     if s.tmState = TMState.Init then some {
         s with
         tmState := TMState.Aborted,
@@ -82,7 +84,7 @@ def tmAbort: Option (ProtocolState RM) :=
     } else none
 
 /-- Resource manager `rm` prepares. -/
-def rmPrepare (rm: RM): Option (ProtocolState RM) :=
+def rmPrepare (rm: RM): NextState RM :=
     if s.rmState.get? rm = RMState.Working then some {
         s with
         rmState := s.rmState.insert rm RMState.Prepared,
@@ -91,19 +93,19 @@ def rmPrepare (rm: RM): Option (ProtocolState RM) :=
 
 /-- Resource manager $rm$ spontaneously decides to abort.  As noted above, `rm`
 does not send any message in our simplified spec. -/
-def rmChooseToAbort (rm: RM): Option (ProtocolState RM) :=
+def rmChooseToAbort (rm: RM): NextState RM :=
     if s.rmState.get? rm = RMState.Working then some {
         s with rmState := s.rmState.insert rm RMState.Aborted,
     } else none
 
 /-- Resource manager `rm` is told by the TM to commit. -/
-def rmRcvCommitMsg (rm: RM): Option (ProtocolState RM) :=
+def rmRcvCommitMsg (rm: RM): NextState RM :=
     if Message.Commit ∈ s.msgs then some {
         s with rmState := s.rmState.insert rm RMState.Committed,
     } else none
 
 /-- Resource manager `rm` is told by the TM to abort. -/
-def rmRcvAbortMsg (rm: RM): Option (ProtocolState RM) :=
+def rmRcvAbortMsg (rm: RM): NextState RM :=
     if Message.Abort ∈ s.msgs then some {
         s with rmState := s.rmState.insert rm RMState.Aborted,
     } else none
