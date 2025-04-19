@@ -47,30 +47,21 @@ instance : SampleableExt (Action RM) :=
 def genSchedule: Gen (List (Action RM)) :=
   Gen.listOf genAction
 
+-- given a concrete schedule, inductively apply the schedule and check the invariant
 def applySchedule (s: ProtocolState RM) (schedule: List (Action RM))
     (inv: ProtocolState RM → Bool): ProtocolState RM :=
   schedule.foldl (fun s a => if inv s then (next RM s a).getD s else s) s
 
+-- apply a schedule to the initial state
+def checkInvariant (schedule: List (Action RM)) (inv: ProtocolState RM → Bool): Bool :=
+  let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+  let last_s := applySchedule init_s schedule inv
+  inv last_s
+
 example (schedule: List (Action RM)):
-    let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
     let inv := fun (s: ProtocolState RM) =>
       --s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
-      s.tmState ≠ TMState.Committed
-    let last_s := applySchedule init_s schedule inv
-    inv last_s
+      --s.tmState ≠ TMState.Committed
+      s.tmState = TMState.Aborted → s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
+    checkInvariant schedule inv
   := by plausible (config := { numInst := 3000, maxSize := 100 })
-
-/-
-def main (args: List String): IO UInt32 := do
-  let res ← Testable.checkIO <| ∀ schedule: List (Action RM),
-      let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
-      let last_s := applySchedule init_s schedule
-      last_s.tmState ≠ TMState.Committed
-  ;
-  IO.println s!"Result: {res}"
-  --match (Testable.check <| ∀ i : Nat, i ≤ 10) with
-  --| TestResult.passed _ => IO.println "Passed"
-  --| TestResult.failed _ => IO.println "Failed"
-  --let result := Testable.checkIO test { numInst := 1000, maxSize := 20 }
-  return 0
--/

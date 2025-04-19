@@ -1,6 +1,7 @@
 -- This module serves as the root of the `Twophase` library.
 -- Import modules here that should be built as part of the library.
 import Mathlib.Data.Finset.Basic
+import Mathlib.Data.Finset.Fold
 
 import Twophase.Functional
 import Twophase.System
@@ -28,27 +29,57 @@ def mkAction (action_no: Nat) (rm_no: Nat): Action RM :=
   | 5 => Action.RMRcvCommitMsg rm
   | _ => Action.RMRcvAbortMsg rm
 
+def help: String :=
+  "❌ Arguments: <number of runs> <number of steps> <invariant> <seed>"
+
 def parseNat (s: String): IO Nat :=
   match s.toNat? with
   | some k => pure k
-  | none   => panic! s!"❌ Arguments: <number of runs> <number of steps> <seed>"
+  | none   => panic! help
 
--- this is a false invariant that we use to find a counterexample
-def noCommitInv (s: ProtocolState RM): Bool :=
+-- This is a false invariant to demonstrate that TM can abort.
+def noAbortEx (s: ProtocolState RM): Bool :=
+  s.tmState ≠ TMState.Aborted
+
+-- This is a false invariant to demonstrate that TM can commit.
+def noCommitEx (s: ProtocolState RM): Bool :=
   s.tmState ≠ TMState.Committed
+
+-- This is a false invariant for a trickier property:
+-- Even though all resource managers are prepared, the TM can still abort.
+def noAbortOnAllPreparedEx (s: ProtocolState RM): Bool :=
+  s.tmState = TMState.Aborted → s.tmPrepared ≠ s.all
+
+-- the main invariant of the protocol, namely, that resource managers cannot disagree
+def consistentInv (s: ProtocolState RM): Bool :=
+  let existsAborted :=
+    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) s.all)
+  let existsCommitted :=
+    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) s.all)
+  ¬existsAborted ∨ ¬existsCommitted
 
 def main (args: List String): IO UInt32 := do
   -- parse the arguments
   let mut maxSamples := 10000
   let mut maxSteps := 10
   let mut seed := 0
+  let mut inv := fun (_: ProtocolState RM) => true
   match args with
-  | [ maxSamples_s, maxSteps_s, seed_s ] =>
+  | [ maxSamples_s, maxSteps_s, inv_s, seed_s ] =>
     maxSamples ← parseNat maxSamples_s
     maxSteps ← parseNat maxSteps_s
     seed ← parseNat seed_s
+    match inv_s with
+    | "noAbortEx" => inv := noAbortEx
+    | "noCommitEx" => inv := noCommitEx
+    | "noAbortOnAllPreparedEx" => inv := noAbortOnAllPreparedEx
+    | "consistentInv" => inv := consistentInv
+    | _ =>
+      IO.eprintln help;
+      return 1
+
   | _ =>
-    IO.eprintln s!"❌ Arguments: <number of runs> <number of steps> <seed>";
+    IO.eprintln help;
     return 1
 
   -- run a loop of `maxSamples`
@@ -68,8 +99,8 @@ def main (args: List String): IO UInt32 := do
         trace := action::trace
       | none => pure ()
 
-      -- check our falsy invariant
-      if ¬noCommitInv state then
+      -- check our invariant
+      if ¬inv state then
         IO.println s!"❌ Counterexample found after {trial} trials"
         for (a, i) in trace.reverse.zipIdx 0 do
           IO.println s!"#{i}: {repr a}"
