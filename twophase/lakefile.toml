@@ -2,6 +2,7 @@ name = "twophase"
 version = "0.1.0"
 keywords = ["math"]
 defaultTargets = ["Twophase"]
+testDriver= "TestTwophase4"
 
 [leanOptions]
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
@@ -15,5 +16,9 @@ scope = "leanprover-community"
 name = "Twophase"
 
 [[lean_exe]]
-name = "Twophase3"
-root = "Twophase3"
+name = "RunTwophase4"
+root = "Twophase4_run"
+
+[[lean_exe]]
+name = "TestTwophase4"
+root = "Twophase4_pbt"

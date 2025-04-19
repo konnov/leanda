@@ -1,0 +1,76 @@
+import Plausible
+import Twophase.System
+
+open Plausible
+
+set_option maxRecDepth 1000000
+
+-- An instance of three resource managers.
+inductive RM
+  | RM1
+  | RM2
+  | RM3
+  | RM4
+  deriving Repr, DecidableEq, Hashable, Inhabited
+
+-- define a generator for RM
+instance RM.shrinkable: Shrinkable RM where
+  shrink := fun (_: RM) => []
+
+def genRm: Gen RM := (Gen.elements [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ] (by decide))
+
+instance : SampleableExt RM :=
+  SampleableExt.mkSelfContained genRm
+
+#sample RM
+
+-- define a generator for Action RM
+instance Action.shrinkable: Shrinkable (Action RM) where
+  shrink := fun (_: Action RM) => []
+
+def genAction: Gen (Action RM) :=
+  Gen.oneOf #[
+    Gen.elements [ Action.TMCommit, Action.TMAbort] (by decide),
+    (do return (Action.TMRcvPrepared (← genRm))),
+    (do return (Action.RMPrepare (← genRm))),
+    (do return (Action.RMChooseToAbort (← genRm))),
+    (do return (Action.RMRcvCommitMsg (← genRm))),
+    (do return (Action.RMRcvAbortMsg (← genRm)))
+  ]
+  (by decide)
+
+instance : SampleableExt (Action RM) :=
+  SampleableExt.mkSelfContained genAction
+
+#sample Action RM
+
+def genSchedule: Gen (List (Action RM)) :=
+  Gen.listOf genAction
+
+def applySchedule (s: ProtocolState RM) (schedule: List (Action RM))
+    (inv: ProtocolState RM → Bool): ProtocolState RM :=
+  schedule.foldl (fun s a => if inv s then (next RM s a).getD s else s) s
+
+example (schedule: List (Action RM)):
+    let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+    let inv := fun (s: ProtocolState RM) =>
+      --s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
+      s.tmState ≠ TMState.Committed
+    let last_s := applySchedule init_s schedule inv
+    inv last_s
+  := by plausible (config := { numInst := 3000, maxSize := 100 })
+
+/-
+def main (args: List String): IO UInt32 := do
+  let res ← Testable.checkIO <| ∀ schedule: List (Action RM),
+      let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+      let last_s := applySchedule init_s schedule
+      last_s.tmState ≠ TMState.Committed
+  ;
+  IO.println s!"Result: {res}"
+  --match (Testable.check <| ∀ i : Nat, i ≤ 10) with
+  --| TestResult.passed _ => IO.println "Passed"
+  --| TestResult.failed _ => IO.println "Failed"
+  --let result := Testable.checkIO test { numInst := 1000, maxSize := 20 }
+  return 0
+-/
