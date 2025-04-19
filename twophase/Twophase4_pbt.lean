@@ -58,10 +58,33 @@ def checkInvariant (schedule: List (Action RM)) (inv: ProtocolState RM → Bool)
   let last_s := applySchedule init_s schedule inv
   inv last_s
 
+-- noAbortEx
 example (schedule: List (Action RM)):
     let inv := fun (s: ProtocolState RM) =>
-      --s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
-      --s.tmState ≠ TMState.Committed
+      s.tmState ≠ TMState.Aborted
+    checkInvariant schedule inv
+  := by plausible (config := { numInst := 3000, maxSize := 100 })
+
+-- noCommitEx
+example (schedule: List (Action RM)):
+    let inv := fun (s: ProtocolState RM) =>
+      s.tmState ≠ TMState.Committed
+    checkInvariant schedule inv
+  := by plausible (config := { numInst := 3000, maxSize := 100 })
+
+-- noAbortOnAllPreparedEx
+example (schedule: List (Action RM)):
+    let inv := fun (s: ProtocolState RM) =>
       s.tmState = TMState.Aborted → s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
     checkInvariant schedule inv
   := by plausible (config := { numInst := 3000, maxSize := 100 })
+
+-- consistentInv
+#eval Testable.check <| ∀ (schedule: List (Action RM)),
+    let inv := fun (s: ProtocolState RM) =>
+      let existsAborted :=
+        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) s.all)
+      let existsCommitted :=
+        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) s.all)
+      ¬existsAborted ∨ ¬existsCommitted
+    checkInvariant schedule inv
