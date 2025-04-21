@@ -11,6 +11,8 @@ applicable to a given state, we return `none`.
 Compare it with the
 [TLA+ specification](https://github.com/tlaplus/Examples/blob/master/specifications/transaction_commit/TwoPhase.tla).
 
+Copyright (c) 2025 Igor Konnov
+Released under MIT license as described in the file LICENSE.
 Authors: Igor Konnov, 2025
 -/
 import Std.Data.HashMap

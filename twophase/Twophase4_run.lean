@@ -1,5 +1,10 @@
--- This module serves as the root of the `Twophase` library.
--- Import modules here that should be built as part of the library.
+/-
+A randomised simulation of the Two-phase commit protocol.
+
+Copyright (c) 2025 Igor Konnov
+Released under MIT license as described in the file LICENSE.
+Authors: Igor Konnov, 2025
+-/
 import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Finset.Fold
 

@@ -1,3 +1,10 @@
+/-
+Property-based testing of the two-phase commit protocol with Plausible.
+
+Copyright (c) 2025 Igor Konnov
+Released under MIT license as described in the file LICENSE.
+Authors: Igor Konnov, 2025
+ -/
 import Plausible
 import Twophase.System
 
