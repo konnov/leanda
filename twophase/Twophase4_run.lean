@@ -1,25 +1,26 @@
--- This module serves as the root of the `Twophase` library.
--- Import modules here that should be built as part of the library.
+/-
+A randomised simulator for the two-phase commit protocol.
+
+Copyright (c) 2025 Igor Konnov
+Released under MIT license as described in the file LICENSE.
+Authors: Igor Konnov, 2025
+-/
 import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Finset.Fold
 
 import Twophase.Functional
 import Twophase.System
 
--- An instance of four resource managers.
-inductive RM
-  | RM1
-  | RM2
-  | RM3
-  | RM4
-  deriving Repr, DecidableEq, Hashable, Inhabited
+-- We fix the number of resource managers to 4.
+def N : Nat := 4
 
-def mkAction (action_no: Nat) (rm_no: Nat): Action RM :=
-  let rm := match rm_no with
-    | 0 => RM.RM1
-    | 1 => RM.RM2
-    | 2 => RM.RM3
-    | _ => RM.RM4
+open Nat
+
+theorem N_ne_zero: N ≠ 0 :=
+  by decide
+
+def mkAction (action_no: Nat) (rm_no: Nat): Action N :=
+  let rm := @Fin.ofNat' N ⟨N_ne_zero⟩ rm_no
   match action_no with
   | 0 => Action.TMCommit
   | 1 => Action.TMAbort
@@ -38,24 +39,24 @@ def parseNat (s: String): IO Nat :=
   | none   => panic! help
 
 -- This is a false invariant to demonstrate that TM can abort.
-def noAbortEx (s: ProtocolState RM): Bool :=
+def noAbortEx (s: ProtocolState N): Bool :=
   s.tmState ≠ TMState.Aborted
 
 -- This is a false invariant to demonstrate that TM can commit.
-def noCommitEx (s: ProtocolState RM): Bool :=
+def noCommitEx (s: ProtocolState N): Bool :=
   s.tmState ≠ TMState.Committed
 
 -- This is a false invariant for a trickier property:
 -- Even though all resource managers are prepared, the TM can still abort.
-def noAbortOnAllPreparedEx (s: ProtocolState RM): Bool :=
-  s.tmState = TMState.Aborted → s.tmPrepared ≠ s.all
+def noAbortOnAllPreparedEx (s: ProtocolState N): Bool :=
+  s.tmState = TMState.Aborted → s.tmPrepared ≠ AllRM
 
 -- the main invariant of the protocol, namely, that resource managers cannot disagree
-def consistentInv (s: ProtocolState RM): Bool :=
+def consistentInv (s: ProtocolState N): Bool :=
   let existsAborted :=
-    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) s.all)
+    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) AllRM)
   let existsCommitted :=
-    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) s.all)
+    ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) AllRM)
   ¬existsAborted ∨ ¬existsCommitted
 
 def main (args: List String): IO UInt32 := do
@@ -63,7 +64,7 @@ def main (args: List String): IO UInt32 := do
   let mut maxSamples := 10000
   let mut maxSteps := 10
   let mut seed := 0
-  let mut inv := fun (_: ProtocolState RM) => true
+  let mut inv := fun (_: ProtocolState N) => true
   match args with
   | [ maxSamples_s, maxSteps_s, inv_s, seed_s ] =>
     maxSamples ← parseNat maxSamples_s
@@ -85,15 +86,15 @@ def main (args: List String): IO UInt32 := do
   -- run a loop of `maxSamples`
   let mut rng := mkStdGen seed
   for trial in [0:maxSamples] do
-    let mut state := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+    let mut state := init
     -- run a loop of `maxSteps` steps
-    let mut trace: List (Action RM) := []
+    let mut trace: List (Action N) := []
     for _ in [0:maxSteps] do
       let (action_no, next_rng) := randNat rng 0 6
       let (rm_no, next_rng) := randNat next_rng 0 3
       rng := next_rng
       let action := mkAction action_no rm_no
-      match next RM state action with
+      match next state action with
       | some new_state =>
         state := new_state
         trace := action::trace

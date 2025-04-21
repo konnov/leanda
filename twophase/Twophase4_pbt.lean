@@ -1,34 +1,42 @@
+/-
+Property-based tests for the two-phase protocol.
+
+Copyright (c) 2025 Igor Konnov
+Released under MIT license as described in the file LICENSE.
+Authors: Igor Konnov, 2025
+-/
 import Plausible
 import Twophase.System
 
 open Plausible
 
-set_option maxRecDepth 1000000
+-- We fix the number of resource managers to 4.
+def N : Nat := 4
 
--- An instance of three resource managers.
-inductive RM
-  | RM1
-  | RM2
-  | RM3
-  | RM4
-  deriving Repr, DecidableEq, Hashable, Inhabited
+theorem N_ne_zero: N ≠ 0 :=
+  by decide
 
--- define a generator for RM
-instance RM.shrinkable: Shrinkable RM where
-  shrink := fun (_: RM) => []
+def genRm: Gen (Fin N) :=
+  -- FIXME: figure out how to use `Random.randFin`
+  (Gen.elements [
+      @Fin.ofNat' N ⟨N_ne_zero⟩ 0,
+      @Fin.ofNat' N ⟨N_ne_zero⟩ 1,
+      @Fin.ofNat' N ⟨N_ne_zero⟩ 2,
+      @Fin.ofNat' N ⟨N_ne_zero⟩ 3
+    ]
+    (by decide))
 
-def genRm: Gen RM := (Gen.elements [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ] (by decide))
+instance : Shrinkable (Fin N) where
+  shrink := fun (_: Fin N) => []
 
-instance : SampleableExt RM :=
+instance : SampleableExt (Fin N) :=
   SampleableExt.mkSelfContained genRm
 
-#sample RM
-
 -- define a generator for Action RM
-instance Action.shrinkable: Shrinkable (Action RM) where
-  shrink := fun (_: Action RM) => []
+instance Action.shrinkable: Shrinkable (Action N) where
+  shrink := fun (_: Action N) => []
 
-def genAction: Gen (Action RM) :=
+def genAction: Gen (Action N) :=
   Gen.oneOf #[
     Gen.elements [ Action.TMCommit, Action.TMAbort] (by decide),
     (do return (Action.TMRcvPrepared (← genRm))),
@@ -39,52 +47,52 @@ def genAction: Gen (Action RM) :=
   ]
   (by decide)
 
-instance : SampleableExt (Action RM) :=
+instance : SampleableExt (Action N) :=
   SampleableExt.mkSelfContained genAction
 
-#sample Action RM
+#sample Action N
 
-def genSchedule: Gen (List (Action RM)) :=
+def genSchedule: Gen (List (Action N)) :=
   Gen.listOf genAction
 
 -- given a concrete schedule, inductively apply the schedule and check the invariant
-def applySchedule (s: ProtocolState RM) (schedule: List (Action RM))
-    (inv: ProtocolState RM → Bool): ProtocolState RM :=
-  schedule.foldl (fun s a => if inv s then (next RM s a).getD s else s) s
+def applySchedule (s: ProtocolState N) (schedule: List (Action N))
+    (inv: ProtocolState N → Bool): ProtocolState N :=
+  schedule.foldl (fun s a => if inv s then (next s a).getD s else s) s
 
 -- apply a schedule to the initial state
-def checkInvariant (schedule: List (Action RM)) (inv: ProtocolState RM → Bool): Bool :=
-  let init_s := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+def checkInvariant (schedule: List (Action N)) (inv: ProtocolState N → Bool): Bool :=
+  let init_s := init
   let last_s := applySchedule init_s schedule inv
   inv last_s
 
 -- noAbortEx
-example (schedule: List (Action RM)):
-    let inv := fun (s: ProtocolState RM) =>
+example (schedule: List (Action N)):
+    let inv := fun (s: ProtocolState N) =>
       s.tmState ≠ TMState.Aborted
     checkInvariant schedule inv
   := by plausible (config := { numInst := 3000, maxSize := 100 })
 
 -- noCommitEx
-example (schedule: List (Action RM)):
-    let inv := fun (s: ProtocolState RM) =>
+example (schedule: List (Action N)):
+    let inv := fun (s: ProtocolState N) =>
       s.tmState ≠ TMState.Committed
     checkInvariant schedule inv
   := by plausible (config := { numInst := 3000, maxSize := 100 })
 
 -- noAbortOnAllPreparedEx
-example (schedule: List (Action RM)):
-    let inv := fun (s: ProtocolState RM) =>
-      s.tmState = TMState.Aborted → s.tmPrepared ≠ { RM.RM1, RM.RM2, RM.RM3, RM.RM4 }
+example (schedule: List (Action N)):
+    let inv := fun (s: ProtocolState N) =>
+      s.tmState = TMState.Aborted → s.tmPrepared ≠ AllRM
     checkInvariant schedule inv
   := by plausible (config := { numInst := 3000, maxSize := 100 })
 
 -- consistentInv
-#eval Testable.check <| ∀ (schedule: List (Action RM)),
-    let inv := fun (s: ProtocolState RM) =>
+#eval Testable.check <| ∀ (schedule: List (Action N)),
+    let inv := fun (s: ProtocolState N) =>
       let existsAborted :=
-        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) s.all)
+        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Aborted) AllRM)
       let existsCommitted :=
-        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) s.all)
+        ∅ ≠ (Finset.filter (fun rm => s.rmState.get? rm = RMState.Committed) AllRM)
       ¬existsAborted ∨ ¬existsCommitted
     checkInvariant schedule inv
