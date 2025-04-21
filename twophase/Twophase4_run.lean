@@ -19,7 +19,7 @@ inductive RM
   | RM4
   deriving Repr, DecidableEq, Hashable, Inhabited
 
-def mkAction (action_no: Nat) (rm_no: Nat): Action RM :=
+def mkAction (action_no: Nat) (rm_no: Nat): @Action RM :=
   let rm := match rm_no with
     | 0 => RM.RM1
     | 1 => RM.RM2
@@ -90,15 +90,15 @@ def main (args: List String): IO UInt32 := do
   -- run a loop of `maxSamples`
   let mut rng := mkStdGen seed
   for trial in [0:maxSamples] do
-    let mut state := init RM [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
+    let mut state := init [ RM.RM1, RM.RM2, RM.RM3, RM.RM4 ]
     -- run a loop of `maxSteps` steps
-    let mut trace: List (Action RM) := []
+    let mut trace: List (@Action RM) := []
     for _ in [0:maxSteps] do
       let (action_no, next_rng) := randNat rng 0 6
       let (rm_no, next_rng) := randNat next_rng 0 3
       rng := next_rng
       let action := mkAction action_no rm_no
-      match next RM state action with
+      match next state action with
       | some new_state =>
         state := new_state
         trace := action::trace

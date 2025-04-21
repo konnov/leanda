@@ -7,16 +7,13 @@ Authors: Igor Konnov, 2025
 -/
 import Twophase.Functional
 
--- The abstract type of resource managers.
-variable {RM : Type} [DecidableEq RM] [Hashable RM] [Repr RM]
-
 /--
 Since Lean4 is not TLA+, it does not have a built-in syntax for actions.
 Hence, we introduce the type that essentially turns control and data
 non-deterministm into inputs. This trick is usually called a "schedule"
 or "adversary" in the literature.
 -/
-inductive Action where
+inductive Action RM where
   | TMCommit
   | TMAbort
   | TMRcvPrepared(rm: RM)
@@ -25,6 +22,10 @@ inductive Action where
   | RMRcvCommitMsg(rm: RM)
   | RMRcvAbortMsg(rm: RM)
   deriving DecidableEq, Repr
+
+section
+-- The abstract type of resource managers.
+variable {RM : Type} [DecidableEq RM] [Hashable RM] [Repr RM]
 
 /-- initialize the state of all resource managers to `Working` -/
 def init_rm_state (all: List RM) :=
@@ -52,3 +53,4 @@ def next s a :=
   | Action.RMChooseToAbort rm => rmChooseToAbort _ s rm
   | Action.RMRcvCommitMsg rm => rmRcvCommitMsg _ s rm
   | Action.RMRcvAbortMsg rm => rmRcvAbortMsg _ s rm
+end
