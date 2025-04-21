@@ -1,5 +1,5 @@
 /-
-A randomised simulator for the two-phase commit protocol.
+A randomised simulation of the Two-phase commit protocol.
 
 Copyright (c) 2025 Igor Konnov
 Released under MIT license as described in the file LICENSE.
