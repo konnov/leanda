@@ -21,13 +21,6 @@ import Mathlib.Data.Finset.Basic
 -- The abstract type of resource managers.
 variable (RM : Type) [DecidableEq RM] [Hashable RM] [Repr RM]
 
-/-- A message that sent by either the transaction manager or a resource manager. -/
-inductive Message where
-    | Commit
-    | Abort
-    | Prepared(rm: RM)
-    deriving DecidableEq, Repr
-
 /-- A state of a resource manager. -/
 inductive RMState where
     | Working
@@ -41,6 +34,13 @@ inductive TMState where
     | Init
     | Committed
     | Aborted
+    deriving DecidableEq, Repr
+
+/-- A message that sent by either the transaction manager or a resource manager. -/
+inductive Message where
+    | Commit
+    | Abort
+    | Prepared(rm: RM)
     deriving DecidableEq, Repr
 
 /-- A state of the Two-phase commit protocol. -/
