@@ -17,5 +17,5 @@ jobs:
 
       - name: Simulate twophase
         run: |
-          cd Twophase
+          cd twophase
           lake exec RunTwophase4 100000 50 consistentInv $(date +%s)
