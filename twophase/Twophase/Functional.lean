@@ -36,7 +36,7 @@ inductive TMState where
     | Aborted
     deriving DecidableEq, Repr
 
-/-- A message that sent by either the transaction manager or a resource manager. -/
+/-- A message that is sent by either the transaction manager or a resource manager. -/
 inductive Message where
     | Commit
     | Abort

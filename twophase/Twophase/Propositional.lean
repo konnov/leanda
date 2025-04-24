@@ -66,8 +66,9 @@ def rm_rcv_abort_msg (rm: RM): Prop :=
 -- TODO: someone has to write the proofs :)
 
 theorem tm_rcv_prepared_correct (rm: RM):
-    tm_rcv_prepared s s' rm ↔
-      tmRcvPrepared RM s rm = some s' := by sorry
+  tm_rcv_prepared s s' rm ↔
+    tmRcvPrepared RM s rm = some s' := by
+    sorry
 
 theorem tm_commit_correct :
     tm_commit s s' ↔
