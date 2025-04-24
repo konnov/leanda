@@ -1,4 +1,4 @@
-name: Lean Action CI
+name: Lean actions 
 
 on:
   push:
@@ -6,26 +6,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-twophase:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: "Twophase"
 
-      - name: Build Twophase
-        run: |
-          cd Twophase
-          lake build Twophase4_run
-  
-  simulate:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: leanprover/lean-action@v1
-
-      - name: Run Simulation
+      - name: Simulate twophase
         run: |
           cd Twophase
           lake exec RunTwophase4 100000 50 consistentInv $(date +%s)
