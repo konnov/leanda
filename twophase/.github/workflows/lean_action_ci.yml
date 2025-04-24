@@ -12,3 +12,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: leanprover/lean-action@v1
+
+      - name: Build Twophase
+        run: |
+          cd Twophase
+          lake build Twophase4_run
+  
+  simulate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+
+      - name: Run Simulation
+        run: |
+          cd Twophase
+          lake exec RunTwophase4 100000 50 consistentInv $(date +%s)
