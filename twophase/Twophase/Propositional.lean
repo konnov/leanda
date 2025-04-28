@@ -54,9 +54,7 @@ def tm_abort: Prop :=
 /-- The proposition version of `rmPrepare`. -/
 def rm_prepare (rm: RM): Prop :=
     s.rmState.get? rm = RMState.Working
-  ∧ s'.rmState.get? rm = RMState.Prepared
-  ∧ ∀ rm' ∈ s.all, rm' ≠ rm →
-      s'.rmState.get? rm' = s.rmState.get? rm
+  ∧ s'.rmState = s.rmState.insert rm RMState.Prepared
   ∧ s'.msgs = s.msgs ∪ { Message.Prepared rm }
   ∧ s'.tmState = s.tmState
   ∧ s'.tmPrepared = s.tmPrepared
@@ -65,9 +63,7 @@ def rm_prepare (rm: RM): Prop :=
 -- The proposition version of `rmChooseToAbort`. -/
 def rm_choose_to_abort (rm: RM): Prop :=
     s.rmState.get? rm = RMState.Working
-  ∧ s'.rmState.get? rm = RMState.Aborted
-  ∧ ∀ rm' ∈ s.all, rm' ≠ rm →
-      s'.rmState.get? rm' = s.rmState.get? rm
+  ∧ s'.rmState = s.rmState.insert rm RMState.Aborted
   ∧ s'.msgs = s.msgs
   ∧ s'.tmState = s.tmState
   ∧ s'.tmPrepared = s.tmPrepared
@@ -76,9 +72,7 @@ def rm_choose_to_abort (rm: RM): Prop :=
 -- The proposition version of `rmRcvCommitMsg`. -/
 def rm_rcv_commit_msg (rm: RM): Prop :=
     Message.Commit ∈ s.msgs
-  ∧ s'.rmState.get? rm = RMState.Committed
-  ∧ ∀ rm' ∈ s.all, rm' ≠ rm →
-      s'.rmState.get? rm' = s.rmState.get? rm
+  ∧ s'.rmState = s.rmState.insert rm RMState.Committed
   ∧ s'.msgs = s.msgs
   ∧ s'.tmState = s.tmState
   ∧ s'.tmPrepared = s.tmPrepared
@@ -87,70 +81,162 @@ def rm_rcv_commit_msg (rm: RM): Prop :=
 -- The proposition version of `rmRcvAbortMsg`. -/
 def rm_rcv_abort_msg (rm: RM): Prop :=
     Message.Abort ∈ s.msgs
-  ∧ s'.rmState.get? rm = RMState.Aborted
-  ∧ ∀ rm' ∈ s.all, rm' ≠ rm →
-      s'.rmState.get? rm' = s.rmState.get? rm
+  ∧ s'.rmState = s.rmState.insert rm RMState.Aborted
   ∧ s'.msgs = s.msgs
   ∧ s'.tmState = s.tmState
   ∧ s'.tmPrepared = s.tmPrepared
   ∧ s'.all = s.all
 
 -- Connecting the denotational and functional specifications.
--- TODO: someone has to write the proofs :)
+-- Effort: 2.5h
 
 theorem tm_rcv_prepared_correct (rm: RM):
       tm_rcv_prepared s s' rm ↔ tmRcvPrepared RM s rm = some s' := by
-    apply Iff.intro
-    case mp =>
-      intro hrel
-      simp [tm_rcv_prepared] at hrel
-      rcases hrel with ⟨ h_tmState, h_msgs, h_tmPrepared', h_tmState',
-        h_rmState', h_msgs', h_all' ⟩
-      simp [tmRcvPrepared, h_tmState, h_msgs]
-      rw [h_tmState] at h_tmState'
-      apply ProtocolState.ext
-      repeat simp [*]
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [tm_rcv_prepared] at hrel
+    rcases hrel with ⟨ h_tmState, h_msgs, h_tmPrepared', h_tmState',
+      h_rmState', h_msgs', h_all' ⟩
+    simp [tmRcvPrepared, h_tmState, h_msgs]
+    rw [h_tmState] at h_tmState'
+    apply ProtocolState.ext
+    repeat simp [*]
 
-    case mpr =>
-      intro heq
-      simp [tmRcvPrepared] at heq
-      rcases heq with ⟨ ⟨ h_tmState, h_msgs ⟩, h_seq ⟩
-      unfold tm_rcv_prepared
-      simp [h_tmState, h_msgs]
-      rw [h_tmState] at h_seq
-      cases h_seq; simp
+  case mpr =>
+    intro heq
+    simp [tmRcvPrepared] at heq
+    rcases heq with ⟨ ⟨ h_tmState, h_msgs ⟩, h_seq ⟩
+    unfold tm_rcv_prepared
+    simp [h_tmState, h_msgs]
+    rw [h_tmState] at h_seq
+    cases h_seq; simp
 
 theorem tm_commit_correct : tm_commit s s' ↔ tmCommit RM s = some s' := by
-      apply Iff.intro
-      case mp =>
-        intro hrel
-        simp [tm_commit] at hrel
-        rcases hrel with ⟨ h_tmState, h_tmPrepared, h_tmState', h_msgs',
-          h_tmPrepared', h_rmState', h_all' ⟩
-        simp [tmCommit, h_tmState, h_tmPrepared]
-        apply ProtocolState.ext
-        repeat simp [*]
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [tm_commit] at hrel
+    rcases hrel with ⟨ h_tmState, h_tmPrepared, h_tmState', h_msgs',
+      h_tmPrepared', h_rmState', h_all' ⟩
+    simp [tmCommit, h_tmState, h_tmPrepared]
+    apply ProtocolState.ext
+    repeat simp [*]
 
-      case mpr =>
-        intro heq
-        simp [tmCommit] at heq
-        rcases heq with ⟨ ⟨ h_tmState, h_tmPrepared ⟩, h_seq ⟩
-        unfold tm_commit
-        simp [h_tmState, h_tmPrepared]
-        cases h_seq
-        repeat simp [*]
+  case mpr =>
+    intro heq
+    simp [tmCommit] at heq
+    rcases heq with ⟨ ⟨ h_tmState, h_tmPrepared ⟩, h_seq ⟩
+    unfold tm_commit
+    simp [h_tmState, h_tmPrepared]
+    cases h_seq
+    repeat simp [*]
 
-theorem tm_abort_correct : tm_abort s s' ↔ tmAbort RM s = some s' := by sorry
+theorem tm_abort_correct : tm_abort s s' ↔ tmAbort RM s = some s' := by
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [tm_abort] at hrel
+    rcases hrel with ⟨ h_tmState, h_tmState', h_msgs', h_tmPrepared',
+      h_rmState', h_all' ⟩
+    simp [tmAbort, h_tmState]
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [tmAbort] at heq
+    rcases heq with ⟨ h_tmState, h_seq ⟩
+    unfold tm_abort
+    simp [h_tmState]
+    cases h_seq
+    repeat simp [*]
 
 theorem rm_prepare_correct (rm: RM):
-    rm_prepare s s' rm ↔ rmPrepare RM s rm = some s' := by sorry
+    rm_prepare s s' rm ↔ rmPrepare RM s rm = some s' := by
+  -- completely generated by Copilot from the above proofs
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [rm_prepare] at hrel
+    rcases hrel with
+      ⟨ h_rmState, h_rmState', h_msgs', h_tmState', h_tmPrepared', h_all' ⟩
+    simp [rmPrepare, h_rmState]
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [rmPrepare] at heq
+    rcases heq with ⟨ h_rmState, h_seq ⟩
+    unfold rm_prepare
+    simp [h_rmState]
+    cases h_seq
+    repeat simp [*]
 
 theorem rm_choose_to_abort_correct (rm: RM):
-    rm_choose_to_abort s s' rm ↔ rmChooseToAbort RM s rm = some s' := by sorry
+    rm_choose_to_abort s s' rm ↔ rmChooseToAbort RM s rm = some s' := by
+  -- completely generated by Copilot from the above proofs
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [rm_choose_to_abort] at hrel
+    rcases hrel with
+      ⟨ h_rmState, h_rmState', h_msgs', h_tmState', h_tmPrepared', h_all' ⟩
+    simp [rmChooseToAbort, h_rmState]
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [rmChooseToAbort] at heq
+    rcases heq with ⟨ h_rmState, h_seq ⟩
+    unfold rm_choose_to_abort
+    simp [h_rmState]
+    cases h_seq
+    repeat simp [*]
 
 theorem rm_rcv_commit_msg_correct (rm: RM):
-    rm_rcv_commit_msg s s' rm ↔ rmRcvCommitMsg RM s rm = some s' := by sorry
+    rm_rcv_commit_msg s s' rm ↔ rmRcvCommitMsg RM s rm = some s' := by
+  -- completely generated by Copilot from the above proofs
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [rm_rcv_commit_msg] at hrel
+    rcases hrel with
+      ⟨ h_msgs, h_rmState', h_msgs', h_tmState', h_tmPrepared', h_all' ⟩
+    simp [rmRcvCommitMsg, h_msgs]
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [rmRcvCommitMsg] at heq
+    rcases heq with ⟨ h_msgs, h_seq ⟩
+    unfold rm_rcv_commit_msg
+    simp [h_msgs]
+    cases h_seq
+    repeat simp [*]
 
 theorem rm_rcv_abort_msg_correct (rm: RM):
-    rm_rcv_abort_msg s s' rm ↔ rmRcvAbortMsg RM s rm = some s' := by sorry
+    rm_rcv_abort_msg s s' rm ↔ rmRcvAbortMsg RM s rm = some s' := by
+  -- completely generated by Copilot from the above proofs
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [rm_rcv_abort_msg] at hrel
+    rcases hrel with
+      ⟨ h_msgs, h_rmState', h_msgs', h_tmState', h_tmPrepared', h_all' ⟩
+    simp [rmRcvAbortMsg, h_msgs]
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [rmRcvAbortMsg] at heq
+    rcases heq with ⟨ h_msgs, h_seq ⟩
+    unfold rm_rcv_abort_msg
+    simp [h_msgs]
+    cases h_seq
+    repeat simp [*]
 end
