@@ -60,7 +60,7 @@ variable (s: ProtocolState RM)
 
 /-- The transaction manager receives a `Prepared` message from a resource manager `rm`. -/
 def tmRcvPrepared (rm: RM) :=
-    if s.tmState = TMState.Init ∧ Message.Prepared rm ∈ s.msgs then some {
+    if s.tmState = TMState.Init && Message.Prepared rm ∈ s.msgs then some {
         s with tmPrepared := s.tmPrepared ∪ { rm },
     } else none
 
@@ -69,7 +69,7 @@ def tmRcvPrepared (rm: RM) :=
   state and every RM has sent a `Prepared` message.
  -/
 def tmCommit :=
-    if s.tmState = TMState.Init ∧ s.tmPrepared = s.all then some {
+    if s.tmState = TMState.Init && s.tmPrepared = s.all then some {
         s with
         tmState := TMState.Committed,
         msgs := s.msgs ∪ { Message.Commit }
