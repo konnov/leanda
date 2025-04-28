@@ -99,20 +99,17 @@ def rm_rcv_abort_msg (rm: RM): Prop :=
 -- TODO: someone has to write the proofs :)
 
 theorem tm_rcv_prepared_correct (rm: RM):
-  tm_rcv_prepared s s' rm ↔
-    tmRcvPrepared RM s rm = some s' := by
+      tm_rcv_prepared s s' rm ↔ tmRcvPrepared RM s rm = some s' := by
     apply Iff.intro
     case mp =>
       intro hrel
       simp [tm_rcv_prepared] at hrel
-      rcases hrel with ⟨ h_tmState, h_msgs, h_tmPrepared', h_tmState', h_rmState', h_msgs', h_all' ⟩
-      simp [tmRcvPrepared]
-      simp [h_tmState]
-      simp [h_msgs]
+      rcases hrel with ⟨ h_tmState, h_msgs, h_tmPrepared', h_tmState',
+        h_rmState', h_msgs', h_all' ⟩
+      simp [tmRcvPrepared, h_tmState, h_msgs]
       rw [h_tmState] at h_tmState'
       apply ProtocolState.ext
-      simp [h_all']; simp [h_tmPrepared']; simp [h_rmState']; simp [h_tmState'];
-      simp [h_tmPrepared']; simp [h_msgs']
+      repeat simp [*]
 
     case mpr =>
       intro heq
@@ -121,22 +118,18 @@ theorem tm_rcv_prepared_correct (rm: RM):
       unfold tm_rcv_prepared
       simp [h_tmState, h_msgs]
       rw [h_tmState] at h_seq
-      cases h_seq
-      simp
+      cases h_seq; simp
 
-theorem tm_commit_correct :
-    tm_commit s s' ↔
-      tmCommit RM s = some s' := by
+theorem tm_commit_correct : tm_commit s s' ↔ tmCommit RM s = some s' := by
       apply Iff.intro
       case mp =>
         intro hrel
         simp [tm_commit] at hrel
-        rcases hrel with ⟨ h_tmState, h_tmPrepared, h_tmState', h_msgs', h_tmPrepared', h_rmState', h_all' ⟩
-        simp [tmCommit]
-        simp [h_tmState, h_tmPrepared]
+        rcases hrel with ⟨ h_tmState, h_tmPrepared, h_tmState', h_msgs',
+          h_tmPrepared', h_rmState', h_all' ⟩
+        simp [tmCommit, h_tmState, h_tmPrepared]
         apply ProtocolState.ext
-        simp [h_all']; simp [h_rmState']; simp [h_tmState'];
-        simp [h_tmPrepared']; simp [h_tmPrepared]; simp [h_msgs']
+        repeat simp [*]
 
       case mpr =>
         intro heq
@@ -145,25 +138,19 @@ theorem tm_commit_correct :
         unfold tm_commit
         simp [h_tmState, h_tmPrepared]
         cases h_seq
-        simp; simp [h_tmPrepared]
+        repeat simp [*]
 
-theorem tm_abort_correct :
-    tm_abort s s' ↔
-      tmAbort RM s = some s' := by sorry
+theorem tm_abort_correct : tm_abort s s' ↔ tmAbort RM s = some s' := by sorry
 
 theorem rm_prepare_correct (rm: RM):
-    rm_prepare s s' rm ↔
-      rmPrepare RM s rm = some s' := by sorry
+    rm_prepare s s' rm ↔ rmPrepare RM s rm = some s' := by sorry
 
 theorem rm_choose_to_abort_correct (rm: RM):
-    rm_choose_to_abort s s' rm ↔
-      rmChooseToAbort RM s rm = some s' := by sorry
+    rm_choose_to_abort s s' rm ↔ rmChooseToAbort RM s rm = some s' := by sorry
 
 theorem rm_rcv_commit_msg_correct (rm: RM):
-    rm_rcv_commit_msg s s' rm ↔
-      rmRcvCommitMsg RM s rm = some s' := by sorry
+    rm_rcv_commit_msg s s' rm ↔ rmRcvCommitMsg RM s rm = some s' := by sorry
 
 theorem rm_rcv_abort_msg_correct (rm: RM):
-    rm_rcv_abort_msg s s' rm ↔
-      rmRcvAbortMsg RM s rm = some s' := by sorry
+    rm_rcv_abort_msg s s' rm ↔ rmRcvAbortMsg RM s rm = some s' := by sorry
 end
