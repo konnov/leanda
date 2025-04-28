@@ -44,6 +44,7 @@ inductive Message where
     deriving DecidableEq, Repr
 
 /-- A state of the Two-phase commit protocol. -/
+@[ext] -- this is needed for proofs
 structure ProtocolState where
     -- The set of the resource managers.
     -- It may differ from run to run, but remains constant during a run.
