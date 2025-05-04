@@ -12,11 +12,14 @@ Authors: Igor Konnov, 2025
 -/
 
 import Twophase.Functional
+import Twophase.System
+import Std.Data.HashMap.Lemmas
 
-section
 -- The abstract type of resource managers.
 variable { RM : Type } [DecidableEq RM] [Hashable RM]
 
+-- connecting the functional and propositional specifications
+section functional
 -- The state `s` is the "current" state of the protocol.
 variable (s: ProtocolState RM)
 -- The state `s'` is the "next" state of the protocol.
@@ -239,4 +242,225 @@ theorem rm_rcv_abort_msg_correct (rm: RM):
     simp [h_msgs]
     cases h_seq
     repeat simp [*]
-end
+end functional
+
+-- connecting the system and propositional specifications
+section system
+
+-- a propositional specification of initialization, similar to Init in TLA+
+def tp_init (all: List RM) (s: ProtocolState RM): Prop :=
+    s.all = all.toFinset
+  ∧ s.rmState = init_rm_state all
+  ∧ s.tmState = TMState.Init
+  ∧ s.tmPrepared = ∅
+  ∧ s.msgs = ∅
+
+-- a propositional specification of a state transition, similar to Next in TLA+
+def tp_next (s: ProtocolState RM) (s': ProtocolState RM): Prop :=
+    tm_commit s s'
+  ∨ tm_abort s s'
+  ∨ ∃ rm: RM,
+      tm_rcv_prepared s s' rm
+    ∨ rm_prepare s s' rm
+    ∨ rm_choose_to_abort s s' rm
+    ∨ rm_rcv_commit_msg s s' rm
+    ∨ rm_rcv_abort_msg s s' rm
+
+/-- Refinement between the initial conditions. -/
+-- Total effort: 4.5h, due to the wrong initial choice of tp_init.
+-- After choosing the right structure, the proof took about 30 min.
+theorem tp_init_correct (all: List RM) (s: ProtocolState RM):
+    tp_init all s ↔ init all = s := by
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [tp_init] at hrel
+    rcases hrel with ⟨ h_all, h_rmState, h_tmState, h_tmPrepared, h_msgs ⟩
+    unfold init
+    apply ProtocolState.ext
+    repeat simp [*]
+
+  case mpr =>
+    intro heq
+    simp [init] at heq
+    unfold tp_init
+    cases heq; repeat simp
+
+/-- Refinement between the transitions. -/
+-- Total effort: 1h
+theorem tp_next_correct (s: ProtocolState RM) (s': ProtocolState RM):
+    tp_next s s' ↔ ∃ a: Action, next s a = some s' := by
+  apply Iff.intro
+  case mp =>
+    intro hrel
+    simp [tp_next] at hrel
+    -- do case analysis on the disjunction structure and apply the refinement theorems
+    cases hrel
+    case inl h_tm_commit =>
+      exists Action.TMCommit
+      unfold next
+      simp [tm_commit_correct] at h_tm_commit
+      exact h_tm_commit
+
+    case inr h_rest =>
+      cases h_rest
+      case inl h_tm_abort =>
+        exists Action.TMAbort
+        unfold next
+        simp [tm_abort_correct] at h_tm_abort
+        exact h_tm_abort
+
+      case inr h_rest =>
+        -- ∃ rm, ...
+        rcases h_rest with ⟨rm, h_act⟩
+        cases h_act
+        case inl h_tm_rcv_prepared =>
+          exists (Action.TMRcvPrepared rm)
+          unfold next
+          simp [tm_rcv_prepared_correct] at h_tm_rcv_prepared
+          exact h_tm_rcv_prepared
+
+        case inr h_rest =>
+          cases h_rest
+          case inl h_rm_prepare =>
+            exists (Action.RMPrepare rm)
+            unfold next
+            simp [rm_prepare_correct] at h_rm_prepare
+            exact h_rm_prepare
+
+          case inr h_rest =>
+            cases h_rest
+            case inl h_rm_choose_to_abort =>
+              exists (Action.RMChooseToAbort rm)
+              unfold next
+              simp [rm_choose_to_abort_correct] at h_rm_choose_to_abort
+              exact h_rm_choose_to_abort
+
+            case inr h_rest =>
+              cases h_rest
+              case inl h_rm_rcv_commit_msg =>
+                exists (Action.RMRcvCommitMsg rm)
+                unfold next
+                simp [rm_rcv_commit_msg_correct] at h_rm_rcv_commit_msg
+                exact h_rm_rcv_commit_msg
+
+              case inr h_rm_rcv_abort_msg =>
+                exists (Action.RMRcvAbortMsg rm)
+                unfold next
+                simp [rm_rcv_abort_msg_correct] at h_rm_rcv_abort_msg
+                exact h_rm_rcv_abort_msg
+
+  case mpr =>
+    intro ⟨a, heq⟩
+    match a with
+    | Action.TMCommit =>
+      simp [next] at heq
+      unfold tp_next
+      rw [← tm_commit_correct] at heq
+      simp [heq]
+
+    | Action.TMAbort =>
+      simp [next] at heq
+      unfold tp_next
+      rw [← tm_abort_correct] at heq
+      simp [heq]
+
+    | Action.TMRcvPrepared rm =>
+      simp [next] at heq
+      unfold tp_next
+      rw [← tm_rcv_prepared_correct] at heq
+      have h: ∃ rm, tm_rcv_prepared s s' rm
+        ∨ rm_prepare s s' rm ∨ rm_choose_to_abort s s' rm
+        ∨ rm_rcv_commit_msg s s' rm ∨ rm_rcv_abort_msg s s' rm := by
+        exists rm
+        simp [heq]
+      simp [h]
+
+    | Action.RMPrepare rm =>
+      simp [next] at heq
+      unfold tp_next
+      rw [← rm_prepare_correct] at heq
+      have h: ∃ rm, tm_rcv_prepared s s' rm
+        ∨ rm_prepare s s' rm ∨ rm_choose_to_abort s s' rm
+        ∨ rm_rcv_commit_msg s s' rm ∨ rm_rcv_abort_msg s s' rm := by
+        exists rm
+        simp [heq]
+      simp [h]
+
+    | Action.RMChooseToAbort rm =>
+      -- generated by Copilot
+      simp [next] at heq
+      unfold tp_next
+      rw [← rm_choose_to_abort_correct] at heq
+      have h: ∃ rm, tm_rcv_prepared s s' rm
+        ∨ rm_prepare s s' rm ∨ rm_choose_to_abort s s' rm
+        ∨ rm_rcv_commit_msg s s' rm ∨ rm_rcv_abort_msg s s' rm := by
+        exists rm
+        simp [heq]
+      simp [h]
+
+    | Action.RMRcvCommitMsg rm =>
+      -- generated by Copilot
+      simp [next] at heq
+      unfold tp_next
+      rw [← rm_rcv_commit_msg_correct] at heq
+      have h: ∃ rm, tm_rcv_prepared s s' rm
+        ∨ rm_prepare s s' rm ∨ rm_choose_to_abort s s' rm
+        ∨ rm_rcv_commit_msg s s' rm ∨ rm_rcv_abort_msg s s' rm := by
+        exists rm
+        simp [heq]
+      simp [h]
+
+    | Action.RMRcvAbortMsg rm =>
+      -- generated by Copilot
+      simp [next] at heq
+      unfold tp_next
+      rw [← rm_rcv_abort_msg_correct] at heq
+      have h: ∃ rm, tm_rcv_prepared s s' rm
+        ∨ rm_prepare s s' rm ∨ rm_choose_to_abort s s' rm
+        ∨ rm_rcv_commit_msg s s' rm ∨ rm_rcv_abort_msg s s' rm := by
+        exists rm
+        simp [heq]
+      simp [h]
+
+-- not used anymore, perhaps, needed in the future?
+lemma init_rm_keys (rm: RM):
+    ∀ all: List RM,
+      ∀ hashmap: Std.HashMap RM RMState,
+        (all.foldl (fun m rm' => m.insert rm' RMState.Working) hashmap)[rm]? =
+          if rm ∈ all then some RMState.Working else hashmap[rm]? := by
+  intro all
+  induction all
+  case nil =>
+    intro hashmap
+    simp [init_rm_state]
+
+  case cons rm'' rms ih =>
+    intro hm
+    simp [init_rm_state]
+    by_cases equal: rm = rm''
+    case pos =>
+      simp [equal]
+      rw [← equal]
+      have h_hm_has_it: (hm.insert rm RMState.Working)[rm]? = some RMState.Working := by
+        simp
+      specialize ih (hm.insert rm RMState.Working)
+      simp [h_hm_has_it] at ih
+      exact ih
+
+    case neg =>
+      simp [equal]
+      have h_hm_delegate: (hm.insert rm'' RMState.Working)[rm]? = hm[rm]? := by
+        rw [Std.HashMap.getElem?_insert]
+        have h: (rm'' == rm) = false := by
+          simp
+          intro (h_eq: rm'' = rm)
+          rw [h_eq] at equal
+          simp [Eq.symm] at equal
+        simp [h]
+
+      specialize ih (hm.insert rm'' RMState.Working)
+      simp [h_hm_delegate] at ih
+      exact ih
+
+end system
