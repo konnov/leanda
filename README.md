@@ -7,4 +7,13 @@ how Lean's features match the features of TLA<sup>+</sup>.
 
 Available specifications:
 
- - [Two-phase commit](./twophase/README.md). See the [blog post](https://protocols-made-fun.com/lean/2025/04/25/lean-two-phase.html) that presents our decisions in details.
+ - [Two-phase commit](./twophase/README.md). See the [blog
+   post](https://protocols-made-fun.com/lean/2025/04/25/lean-two-phase.html) that
+   presents our decisions in details:
+
+   - [Functional specification](./twophase/Twophase/Functional.lean)
+   - [System specification](./twophase/Twophase/System.lean)
+   - [Propositional specification](./twophase/Twophase/Propositional.lean)
+   - [Functional-propositional refinement proofs](./twophase/Twophase/PropositionalProofs.lean)
+   - [Safety proofs via inductive invariants](./twophase/Twophase/InductiveProofs.lean)
+ 
