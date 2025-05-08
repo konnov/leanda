@@ -7,3 +7,5 @@ Authors: Igor Konnov, 2025
 -/
 import Twophase.Functional
 import Twophase.System
+import Twophase.Propositional
+import Twophase.InductiveProofs
