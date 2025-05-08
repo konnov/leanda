@@ -14,6 +14,7 @@ Authors: Igor Konnov, 2025
 import Twophase.Functional
 import Twophase.System
 import Std.Data.HashMap.Lemmas
+import Mathlib.Data.Finset.Basic
 
 -- The abstract type of resource managers.
 variable { RM : Type } [DecidableEq RM] [Hashable RM]
@@ -422,45 +423,5 @@ theorem tp_next_correct (s: ProtocolState RM) (s': ProtocolState RM):
         exists rm
         simp [heq]
       simp [h]
-
--- not used anymore, perhaps, needed in the future?
-lemma init_rm_keys (rm: RM):
-    ∀ all: List RM,
-      ∀ hashmap: Std.HashMap RM RMState,
-        (all.foldl (fun m rm' => m.insert rm' RMState.Working) hashmap)[rm]? =
-          if rm ∈ all then some RMState.Working else hashmap[rm]? := by
-  intro all
-  induction all
-  case nil =>
-    intro hashmap
-    simp [init_rm_state]
-
-  case cons rm'' rms ih =>
-    intro hm
-    simp [init_rm_state]
-    by_cases equal: rm = rm''
-    case pos =>
-      simp [equal]
-      rw [← equal]
-      have h_hm_has_it: (hm.insert rm RMState.Working)[rm]? = some RMState.Working := by
-        simp
-      specialize ih (hm.insert rm RMState.Working)
-      simp [h_hm_has_it] at ih
-      exact ih
-
-    case neg =>
-      simp [equal]
-      have h_hm_delegate: (hm.insert rm'' RMState.Working)[rm]? = hm[rm]? := by
-        rw [Std.HashMap.getElem?_insert]
-        have h: (rm'' == rm) = false := by
-          simp
-          intro (h_eq: rm'' = rm)
-          rw [h_eq] at equal
-          simp [Eq.symm] at equal
-        simp [h]
-
-      specialize ih (hm.insert rm'' RMState.Working)
-      simp [h_hm_delegate] at ih
-      exact ih
 
 end system

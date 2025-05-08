@@ -17,7 +17,7 @@ import Std.Data.HashMap.Lemmas
 -- The abstract type of resource managers.
 variable { RM : Type } [DecidableEq RM] [Hashable RM]
 
--- Lemmas that we found with TLC in ca. 2018. Perhaps, they are not the best ones.
+-- Lemmas that we discovered with Apalache in ca. 2018. Perhaps, they are not the best ones.
 
 def lemma1 (s: ProtocolState RM): Prop :=
   (∃ rm: RM, s.rmState[rm]? = some RMState.Committed) → s.tmState = TMState.Committed
@@ -41,21 +41,155 @@ def lemma4 (s: ProtocolState RM) : Prop :=
     ∧ (rs = some RMState.Aborted → (Message.Abort ∈ s.msgs ∨ Message.Prepared rm ∉ s.msgs))
 
 def lemma5 (s: ProtocolState RM) : Prop :=
-  Message.Abort ∈ s.msgs →
-    (s.tmState = TMState.Aborted
-      ∨ ∃ rm: RM,
-          s.rmState[rm]? = some RMState.Aborted
-        ∧ rm ∉ s.tmPrepared
-        ∧ Message.Prepared rm ∉ s.msgs)
+  Message.Abort ∈ s.msgs → s.tmState = TMState.Aborted
+  /- Added when discovering the invariant with the model checker.
+      It was redundant and complicated the proof.
+  (s.tmState = TMState.Aborted
+    ∨ ∃ rm: RM,
+        s.rmState[rm]? = some RMState.Aborted
+      ∧ rm ∉ s.tmPrepared
+      ∧ Message.Prepared rm ∉ s.msgs)
+  -/
 
 def lemma6 (s: ProtocolState RM) : Prop :=
   Message.Commit ∈ s.msgs →
-    s.tmPrepared = s.all
-      ∧ (s.tmState = TMState.Committed
-        ∨ ∃ rm: RM, s.rmState[rm]? = some RMState.Committed)
+    s.tmPrepared = s.all ∧ s.tmState = TMState.Committed
+    /- Added when discovering the invariant with the model checker.
+        It was redundant and complicated the proof.
+        (s.tmState = TMState.Committed
+      ∨ ∃ rm: RM, s.rmState[rm]? = some RMState.Committed)
+      -/
 
+-- The consistency property that we aim to prove.
+def consistency (s: ProtocolState RM) : Prop :=
+  ∀ rm₁ rm₂: RM,
+    s.rmState[rm₁]? ≠ some RMState.Committed ∨ s.rmState[rm₂]? ≠ some RMState.Aborted
+
+-- Our inductive invariant that we use to prove the consistency property.
 def invariant (s: ProtocolState RM) : Prop :=
   lemma1 s ∧ lemma2 s ∧ lemma3 s ∧ lemma4 s ∧ lemma5 s ∧ lemma6 s
+
+-- Proving that the inductive invariant implies the consistency property.
+-- Effort: 15m
+theorem invariant_implies_consistency (s: ProtocolState RM) (h_inv: invariant s):
+    consistency s := by
+  unfold consistency
+  intro rm₁ rm₂
+  by_contra h_committed_and_aborted -- assume the opposite
+  simp at h_committed_and_aborted
+  rcases h_committed_and_aborted with ⟨h_rm1_committed, h_rm2_aborted⟩
+  have h_ex_committed: ∃ rm: RM, s.rmState[rm]? = some RMState.Committed := by use rm₁
+  unfold invariant at h_inv
+  rcases h_inv with ⟨h_lemma1_s, h_lemma2_s, _⟩
+  unfold lemma1 at h_lemma1_s
+  unfold lemma2 at h_lemma2_s
+  have h_tm_committed: s.tmState = TMState.Committed := by exact h_lemma1_s h_ex_committed
+  simp [h_tm_committed] at h_lemma2_s
+  rcases h_lemma2_s with ⟨_, _, h_no_working_or_aborted⟩
+  specialize h_no_working_or_aborted rm₂
+  rcases h_no_working_or_aborted with ⟨_, h_rm2_not_aborted⟩
+  rw [h_rm2_aborted] at h_rm2_not_aborted
+  exact h_rm2_not_aborted rfl
+
+-- Proving that the initialization of the protocol satisfies the inductive invariant.
+
+-- An additional lemma to reason about map initialization.
+-- Figuring out that we need this lemma was probably the hardest part of the proof.
+lemma init_rm_keys (rm: RM):
+    ∀ all: List RM,
+      ∀ hashmap: Std.HashMap RM RMState,
+        (all.foldl (fun m rm' => m.insert rm' RMState.Working) hashmap)[rm]? =
+          if rm ∈ all then some RMState.Working else hashmap[rm]? := by
+  intro all
+  induction all
+  case nil =>
+    intro hashmap
+    simp [init_rm_state]
+
+  case cons rm'' rms ih =>
+    intro hm
+    simp [init_rm_state]
+    by_cases equal: rm = rm''
+    case pos =>
+      simp [equal]
+      rw [← equal]
+      have h_hm_has_it: (hm.insert rm RMState.Working)[rm]? = some RMState.Working := by
+        simp
+      specialize ih (hm.insert rm RMState.Working)
+      simp [h_hm_has_it] at ih
+      exact ih
+
+    case neg =>
+      simp [equal]
+      have h_hm_delegate: (hm.insert rm'' RMState.Working)[rm]? = hm[rm]? := by
+        rw [Std.HashMap.getElem?_insert]
+        have h: (rm'' == rm) = false := by
+          simp
+          intro (h_eq: rm'' = rm)
+          rw [h_eq] at equal
+          simp [Eq.symm] at equal
+        simp [h]
+
+      specialize ih (hm.insert rm'' RMState.Working)
+      simp [h_hm_delegate] at ih
+      exact ih
+
+-- show that the initialization predicate sets all the resource managers to `Working`
+lemma init_rm_state_post (all: List RM) (s: ProtocolState RM)
+    (h_init: tp_init all s):
+    ∀ rm ∈ s.all, s.rmState.get? rm = RMState.Working := by
+  intro rm h_rm
+  unfold tp_init at h_init
+  rcases h_init with ⟨ h_all, h_rmState, _ ⟩
+  unfold init_rm_state at h_rmState
+  simp [h_rmState]
+  simp [init_rm_keys]
+  rw [h_all] at h_rm
+  simp at h_rm
+  exact h_rm
+
+-- Effort: 50m
+theorem init_implies_invariant (all: List RM) (s: ProtocolState RM)
+    (h_all: ∀ rm: RM, rm ∈ s.all) (h_init: tp_init all s): invariant s := by
+  unfold invariant
+  apply And.intro
+  . unfold lemma1 -- show lemma1
+    have h_all_working: ∀ rm ∈ s.all, s.rmState[rm]? = RMState.Working := by
+      apply init_rm_state_post all s h_init
+    unfold tp_init at h_init
+    rcases h_init with ⟨_, _, h_tmState, _⟩
+    simp [h_tmState]
+    intro rm
+    specialize h_all_working rm
+    specialize h_all rm
+    simp [h_all] at h_all_working
+    simp [h_all_working]
+  . apply And.intro
+    . unfold lemma2 -- show lemma1
+      rcases h_init with ⟨_, _, h_tmState, _⟩
+      simp [h_tmState]
+    . apply And.intro
+      . unfold lemma3 -- show lemma3
+        rcases h_init with ⟨_, _, h_tmState, _⟩
+        simp [h_tmState]
+      . apply And.intro
+        . unfold lemma4 -- show lemma4
+          intro rm
+          have h_all_working: ∀ rm ∈ s.all, s.rmState[rm]? = RMState.Working := by
+            apply init_rm_state_post all s h_init
+          specialize h_all_working rm
+          specialize h_all rm
+          simp [h_all] at h_all_working
+          simp [h_all_working]
+          rcases h_init with ⟨_, _, _, h_tm_prepared_empty, h_msgs_empty⟩
+          simp [h_tm_prepared_empty, h_msgs_empty]
+        . apply And.intro
+          . unfold lemma5 -- show lemma5
+            rcases h_init with ⟨_, _, _, _, h_msgs_empty⟩
+            simp [h_msgs_empty]
+          . unfold lemma6 -- show lemma6
+            rcases h_init with ⟨_, _, _, _, h_msgs_empty⟩
+            simp [h_msgs_empty]
 
 -- Proving the inductive step
 -- We need to prove that the inductive invariant is preserved by the transition function.
@@ -205,6 +339,57 @@ lemma invariant_is_inductive_rm_abort_lemma1 (s: ProtocolState RM) (s': Protocol
         simp [h_tm_not_committed] at h_lemma1_s
       exact h_rm2_not_committed
 
+-- Effort: 15m
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma1 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma1 s' := by
+    unfold lemma1
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    rcases h_rm_rcv_commit_msg with ⟨h_commit_msg, h_update_rm_state, _, h_unchanged_tm_state, _⟩
+    have h_rm_committed: s'.rmState[rm]? = some RMState.Committed := by
+      simp [h_update_rm_state]
+    have h_ex_rm_committed: ∃ rm: RM, s'.rmState[rm]? = some RMState.Committed := by
+      use rm
+    simp [h_ex_rm_committed, h_unchanged_tm_state]
+    rcases h_inv with ⟨h_lemma1_s, _, _, _, _, h_lemma6_s⟩
+    unfold lemma6 at h_lemma6_s; unfold lemma1 at h_lemma1_s
+    simp [h_commit_msg] at h_lemma6_s
+    rcases h_lemma6_s with ⟨_, h_tm_committed⟩
+    exact h_tm_committed
+
+-- Effort: 15m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma1 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma1 s' := by
+    unfold lemma1
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    have h_abort_in_msgs: Message.Abort ∈ s'.msgs := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_msgs] at h_abort_in_msgs
+    rcases h_inv with ⟨h_lemma1_s, _, _, _, h_lemma5_s, _⟩
+    unfold lemma5 at h_lemma5_s
+    have h_tm_aborted: s.tmState = TMState.Aborted := by exact h_lemma5_s h_abort_in_msgs
+    simp [h_tm_aborted]
+    intro rm₂ -- ∀ rm: RM
+    by_cases h_rm2_eq_rm: rm = rm₂
+    case pos =>
+      rw [← h_rm2_eq_rm]
+      have : s'.rmState[rm]? = some RMState.Aborted := by
+        rcases h_rm_rcv_abort_msg with ⟨_, h_update_rm_state, _⟩
+        simp [h_update_rm_state]
+      simp [this]
+
+    case neg =>
+      have h_rm2_state: s'.rmState[rm₂]? = s.rmState[rm₂]? := by
+        rcases h_rm_rcv_abort_msg with ⟨_, h_update_rm_state, _⟩
+        simp [h_update_rm_state, Std.HashMap.getElem?_insert, h_rm2_eq_rm]
+      simp [h_rm2_state]
+      by_contra h_rm2_committed -- assume the opposite
+      have h_ex_committed: ∃ rm: RM, s.rmState[rm]? = some RMState.Committed := by use rm₂
+      unfold lemma1 at h_lemma1_s
+      have h_tm_committed: s.tmState = TMState.Committed := by exact h_lemma1_s h_ex_committed
+      simp [h_tm_committed] at h_tm_aborted
+
 -- Effort: 3.5h
 lemma invariant_is_inductive_tm_commit_lemma2 (s: ProtocolState RM) (s': ProtocolState RM)
   (h_all: ∀ rm: RM, rm ∈ s.all) (h_inv: invariant s) (h_tm_commit: tm_commit s s'):
@@ -237,16 +422,10 @@ lemma invariant_is_inductive_tm_commit_lemma2 (s: ProtocolState RM) (s': Protoco
         case inl h_abort_in_msgs =>
           unfold lemma5 at h_inv
           rcases h_inv with ⟨_, _, _, _, lemma5_s, _⟩
-          cases lemma5_s h_abort_in_msgs
-          case inl h_tm_state_aborted =>
-            -- s.tmState = TMState.Aborted contradicts s.tmState = TMState.Committed
-            simp [h_tm_state_aborted] at h_tm_commit
-
-          case inr h =>
-            rcases h with ⟨rm₂, _, h_rm2_notin_prepared, _⟩
-            have h_rm2_in_prepared: rm₂ ∈ s.tmPrepared := by simp [h_tm_commit, h_all]
-            apply h_rm2_notin_prepared at h_rm2_in_prepared -- contradiction
-            exact h_rm2_in_prepared
+          simp [lemma5_s] at h_abort_in_msgs
+          simp [h_abort_in_msgs] at lemma5_s
+          have h_tm_init: s.tmState = TMState.Init := by simp [h_tm_commit]
+          simp [lemma5_s] at h_tm_init
 
         case inr h_prepared_notin_msgs =>
           have : Message.Prepared rm ∈ s.msgs := by
@@ -324,6 +503,58 @@ lemma invariant_is_inductive_rm_abort_lemma2 (s: ProtocolState RM) (s': Protocol
       simp [h_rm_working] at h_no_working
     simp [h_tm_not_committed]
 
+-- Effort: 30m
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma2 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma2 s' := by
+    unfold lemma2
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_all: s'.all = s.all := by simp [h_rm_rcv_commit_msg]
+    simp [h_unchanged_msgs, h_unchanged_tm_prepared, h_unchanged_tm_state, h_unchanged_all]
+    rcases h_inv with ⟨_, h_lemma2_s, _, _, _, _⟩
+    unfold lemma2 at h_lemma2_s
+    by_cases h_tm_committed: s.tmState = TMState.Committed
+    case neg =>
+      simp [h_tm_committed]
+
+    case pos =>
+      simp [h_tm_committed] at h_lemma2_s; simp [h_tm_committed]
+      rcases h_lemma2_s with ⟨h_tm_prepared_eq_all, h_commit_msg, h_not_working_or_aborted⟩
+      simp [h_tm_prepared_eq_all, h_commit_msg]
+      intro rm₂ -- ∀ rm: RM
+      by_cases h_rm2_eq_rm: rm = rm₂
+      case pos => -- rm₂ = rm
+        rw [← h_rm2_eq_rm]
+        --specialize h_not_working_or_aborted rm
+        have h_rm_state: s'.rmState[rm]? = some RMState.Committed := by
+          rcases h_rm_rcv_commit_msg with ⟨_, h_update_rm_state, _⟩
+          simp [h_update_rm_state]
+        simp [h_rm_state]
+
+      case neg => -- rm ≠ rm₂
+        have h_rm2_state: s'.rmState[rm₂]? = s.rmState[rm₂]? := by
+          rcases h_rm_rcv_commit_msg with ⟨_, h_update_rm_state, _⟩
+          simp [h_update_rm_state, Std.HashMap.getElem?_insert]
+          simp [h_rm2_eq_rm]
+        simp [h_rm2_state]
+        specialize h_not_working_or_aborted rm₂
+        exact h_not_working_or_aborted
+
+-- Effort: 5m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma2 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma2 s' := by
+    unfold lemma2
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_tm_state]
+    rcases h_rm_rcv_abort_msg with ⟨h_abort_msg, _⟩
+    rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+    unfold lemma5 at h_lemma5_s
+    have h_tm_aborted: s.tmState = TMState.Aborted := by exact h_lemma5_s h_abort_msg
+    simp [h_tm_aborted]
+
 -- Effort: 5m
 lemma invariant_is_inductive_tm_commit_lemma3 (s: ProtocolState RM) (s': ProtocolState RM)
   (h_tm_commit: tm_commit s s'):
@@ -367,6 +598,45 @@ lemma invariant_is_inductive_rm_prepare_lemma3 (s: ProtocolState RM) (s': Protoc
     rcases h_inv with ⟨_, _, h_lemma3_s, _, _, _⟩
     unfold lemma3 at h_lemma3_s
     exact h_lemma3_s
+
+-- Effort: 3m
+lemma invariant_is_inductive_rm_abort_lemma3 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_abort: rm_choose_to_abort s s' rm): lemma3 s' := by
+    unfold lemma3
+    unfold rm_choose_to_abort at h_rm_abort
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_abort]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_abort]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    rcases h_inv with ⟨_, _, h_lemma3_s, _, _, _⟩
+    unfold lemma3 at h_lemma3_s
+    exact h_lemma3_s
+
+-- Effort: 2m
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma3 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma3 s' := by
+    unfold lemma3
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_commit_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    rcases h_inv with ⟨_, _, h_lemma3_s, _, _, _⟩
+    unfold lemma3 at h_lemma3_s
+    exact h_lemma3_s
+
+-- Effort: 8m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma3 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma3 s' := by
+    unfold lemma3
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    have h_abort_in_msgs: Message.Abort ∈ s'.msgs := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_msgs] at h_abort_in_msgs
+    rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+    unfold lemma5 at h_lemma5_s
+    have h_tm_aborted: s.tmState = TMState.Aborted := by exact h_lemma5_s h_abort_in_msgs
+    simp [h_tm_aborted, h_abort_in_msgs]
 
 -- Effort: 45m
 lemma invariant_is_inductive_tm_commit_lemma4 (s: ProtocolState RM) (s': ProtocolState RM)
@@ -491,9 +761,126 @@ lemma invariant_is_inductive_rm_prepare_lemma4 (s: ProtocolState RM) (s': Protoc
       specialize h_lemma4_s rm'
       exact h_lemma4_s
 
+-- Effort: 30m
+lemma invariant_is_inductive_rm_abort_lemma4 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_abort: rm_choose_to_abort s s' rm): lemma4 s' := by
+    unfold lemma4
+    unfold rm_choose_to_abort at h_rm_abort
+    intro rm' -- ∀ rm: RM
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_abort]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_abort]
+    simp [h_unchanged_msgs, h_unchanged_tm_prepared]
+    rcases h_inv with ⟨_, _, _, h_lemma4_s, _, _⟩
+    unfold lemma4 at h_lemma4_s
+    by_cases h_eq: rm = rm'
+    case pos =>
+      rw [← h_eq]
+      rcases h_rm_abort with ⟨h_rm_working, h_rm_aborted, _⟩
+      simp [h_rm_aborted]
+      specialize h_lemma4_s rm
+      simp at h_rm_working
+      simp [h_rm_working] at h_lemma4_s
+      rcases h_lemma4_s with ⟨h_rm_not_in_prepared, h_prepared_not_in_msgs⟩
+      simp [h_rm_not_in_prepared, h_prepared_not_in_msgs]
+
+    case neg =>
+      have h_unchanged_rm_state: s'.rmState[rm']? = s.rmState[rm']? := by
+        rcases h_rm_abort with ⟨_, h_update_rm_state,_ ⟩
+        simp [h_update_rm_state, Std.HashMap.getElem?_insert, h_eq]
+      simp [h_unchanged_rm_state]
+      specialize h_lemma4_s rm'
+      exact h_lemma4_s
+
+-- Effort: 15m
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma4 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma4 s' := by
+    unfold lemma4
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_rcv_commit_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs, h_unchanged_tm_prepared]
+    rcases h_inv with ⟨_, _, _, h_lemma4_s, _, _⟩
+    unfold lemma4 at h_lemma4_s
+    intro rm' -- ∀ rm: RM
+    by_cases h_eq: rm = rm'
+    case pos =>
+      rw [← h_eq]
+      have h_rm_committed: s'.rmState[rm]? = some RMState.Committed := by
+        rcases h_rm_rcv_commit_msg with ⟨_, h_update_rm_state, _⟩
+        simp [h_update_rm_state]
+      --have h_prepared_in_msgs: Message.Prepared rm ∈ s'.msgs := by simp [h_rm_rcv_commit_msg]
+      have h_not_working: s'.rmState[rm]? ≠ some RMState.Working := by
+        by_contra h_contra -- assume the opposite
+        rw [h_contra] at h_rm_committed
+        injection h_rm_committed with h_val_eq
+        injection h_val_eq
+      have h_not_aborted: s'.rmState[rm]? ≠ some RMState.Aborted := by
+        by_contra h_contra -- assume the opposite
+        rw [h_contra] at h_rm_committed
+        injection h_rm_committed with h_val_eq
+        injection h_val_eq
+      simp [h_not_working, h_not_aborted]
+      specialize h_lemma4_s rm
+      rcases h_lemma4_s with ⟨h_tm_prepared, _⟩
+      by_cases h_rm_in_prepared: rm ∈ s.tmPrepared
+      case pos =>
+        simp [h_rm_in_prepared, h_tm_prepared]
+      case neg =>
+        simp [h_rm_in_prepared]
+
+    case neg =>
+      have h_unchanged_rm_state: s'.rmState[rm']? = s.rmState[rm']? := by
+        rcases h_rm_rcv_commit_msg with ⟨_, h_update_rm_state,_ ⟩
+        simp [h_update_rm_state, Std.HashMap.getElem?_insert, h_eq]
+      simp [h_unchanged_rm_state]
+      specialize h_lemma4_s rm'
+      rcases h_lemma4_s with ⟨h_tm_prepared, h_not_working,
+        h_prepared_not_in_msgs, h_rm_aborted_or_not_prepared⟩
+      apply And.intro
+      . exact h_tm_prepared
+      . apply And.intro
+        . exact h_not_working
+        . apply And.intro
+          . exact h_prepared_not_in_msgs
+          . exact h_rm_aborted_or_not_prepared
+
+-- Effort: 15m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma4 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma4 s' := by
+    unfold lemma4
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_tm_prepared, h_unchanged_msgs]
+    rcases h_inv with ⟨_, _, _, h_lemma4_s, _, _⟩
+    unfold lemma4 at h_lemma4_s
+    intro rm₂ -- ∀ rm: RM
+    by_cases h_rm_eq_rm2: rm = rm₂
+    case pos => -- rm = rm₂
+      rw [← h_rm_eq_rm2]
+      rcases h_rm_rcv_abort_msg with ⟨h_abort_in_msgs, h_update_rm_state, _⟩
+      have h_rm_aborted: s'.rmState[rm]? = RMState.Aborted := by simp [h_update_rm_state]
+      simp [h_rm_aborted, h_abort_in_msgs]
+      specialize h_lemma4_s rm
+      rcases h_lemma4_s with ⟨h_tm_prepared, _⟩
+      by_cases h_rm_in_prepared: rm ∈ s.tmPrepared
+      case pos =>
+        simp [h_rm_in_prepared, h_tm_prepared]
+      case neg =>
+        simp [h_rm_in_prepared]
+
+    case neg => -- rm ≠ rm₂
+      have h_unchanged_rm_state: s'.rmState[rm₂]? = s.rmState[rm₂]? := by
+        rcases h_rm_rcv_abort_msg with ⟨_, h_update_rm_state, _⟩
+        simp [h_update_rm_state, Std.HashMap.getElem?_insert, h_rm_eq_rm2]
+      simp [h_unchanged_rm_state]
+      specialize h_lemma4_s rm₂
+      exact h_lemma4_s
+
 -- Effort: 25m
 lemma invariant_is_inductive_tm_commit_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
-  (h_all: ∀ rm: RM, rm ∈ s.all) (h_inv: invariant s) (h_tm_commit: tm_commit s s'): lemma5 s' := by
+  (h_inv: invariant s) (h_tm_commit: tm_commit s s'): lemma5 s' := by
     unfold lemma5
     unfold tm_commit at h_tm_commit
     unfold invariant at h_inv
@@ -501,25 +888,11 @@ lemma invariant_is_inductive_tm_commit_lemma5 (s: ProtocolState RM) (s': Protoco
     simp [h_msgs']
     have : Message.Abort ∉ s.msgs := by
       by_contra h_contra -- assume the opposite
-      -- apply lemma5 to s
-      have h_two_cases: s.tmState = TMState.Aborted
-          ∨ ∃ rm: RM,
-                s.rmState[rm]? = some RMState.Aborted
-              ∧ rm ∉ s.tmPrepared
-              ∧ Message.Prepared rm ∉ s.msgs
-          := by
-        rcases h_inv with ⟨_, _, _, _, lemma5_s, _⟩
-        exact lemma5_s h_contra
-      -- TODO: we have pretty much the same proof block as in invariant_is_inductive_tm_commit_lemma2
-      cases h_two_cases
-      case inl h_tm_state_aborted =>
-        -- s.tmState = TMState.Aborted contradicts s.tmState = TMState.Committed
-        simp [h_tm_state_aborted] at h_tm_commit
-      case inr h =>
-        rcases h with ⟨rm₂, _, h_rm2_notin_prepared, _⟩
-        have h_rm2_in_prepared: rm₂ ∈ s.tmPrepared := by simp [h_tm_commit, h_all]
-        apply h_rm2_notin_prepared at h_rm2_in_prepared -- contradiction
-        exact h_rm2_in_prepared
+      rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+      unfold lemma5 at h_lemma5_s
+      simp [h_contra] at h_lemma5_s
+      have h_tm_state_init: s.tmState = TMState.Init := by simp [h_tm_commit]
+      simp [h_tm_state_init] at h_lemma5_s
     simp [this]
 
 -- Effort: 3m
@@ -550,18 +923,6 @@ lemma invariant_is_inductive_tm_receive_prepared_lemma5 (s: ProtocolState RM) (s
 
     case pos =>
       simp [h_abort]; simp [h_abort] at h_lemma5_s
-      rcases h_lemma5_s with ⟨rm₂, ⟨h_rm2_aborted, h_rm2_not_prepared, h_rm2_notin_msgs⟩⟩
-      have h_rm_neq_rm: rm₂ ≠ rm := by
-        by_contra h_contra -- assume the opposite
-        have h_rm_prepared: Message.Prepared rm ∈ s.msgs := by simp [h_tm_rcv_prepared]
-        rw [h_contra] at h_rm2_notin_msgs
-        simp [h_rm_prepared] at h_rm2_notin_msgs
-      have h_rm2_not_prepared: rm₂ ∉ s'.tmPrepared := by
-        have h_tm_prepared: s'.tmPrepared = s.tmPrepared ∪ {rm}:= by simp [h_tm_rcv_prepared]
-        by_contra h_contra -- assume the opposite
-        simp [h_tm_prepared, h_rm_neq_rm] at h_contra
-        simp [h_contra] at h_rm2_not_prepared
-      exists rm₂
 
 -- Effort: 1h
 lemma invariant_is_inductive_rm_prepare_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
@@ -574,42 +935,59 @@ lemma invariant_is_inductive_rm_prepare_lemma5 (s: ProtocolState RM) (s': Protoc
     simp [h_abort_in_msgs, h_unchanged_tm_state]
     rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
     unfold lemma5 at h_lemma5_s
-    by_cases h_abort: Message.Abort ∈ s.msgs
+    exact h_lemma5_s
+
+-- Effort: 30m
+lemma invariant_is_inductive_rm_abort_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_abort: rm_choose_to_abort s s' rm): lemma5 s' := by
+    unfold lemma5
+    unfold rm_choose_to_abort at h_rm_abort
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_abort]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_abort]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_abort]
+    have h_rm_aborted: s'.rmState = s.rmState.insert rm RMState.Aborted := by simp [h_rm_abort]
+    simp [h_unchanged_msgs, h_unchanged_tm_prepared, h_unchanged_tm_state]
+    have h_ex_rm_aborted: ∃ rm: RM, s'.rmState[rm]? = some RMState.Aborted := by
+      have h_rm_state_update : s'.rmState = s.rmState.insert rm RMState.Aborted := by
+        simp [h_rm_abort]
+      exists rm
+      rw [h_rm_state_update]
+      simp
+    by_cases h_abort_in_msgs: Message.Abort ∈ s.msgs
     case neg =>
-      simp [h_abort]
+      simp [h_abort_in_msgs]
 
     case pos =>
-      simp [h_abort] at h_lemma5_s; simp [h_abort]
-      by_cases h_tm_aborted: s.tmState = TMState.Aborted
-      case pos =>
-        simp [h_tm_aborted]
+      rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+      unfold lemma5 at h_lemma5_s
+      exact h_lemma5_s
 
-      case neg =>
-        simp [h_tm_aborted] at h_lemma5_s
-        simp [h_tm_aborted]
-        rcases h_lemma5_s with ⟨rm₂, ⟨h_rm2_aborted, h_rm2_not_prepared, h_rm2_notin_msgs⟩⟩
-        exists rm₂
-        have h_rm_neq_rm2: rm ≠ rm₂ := by
-          by_contra h_contra -- assume the opposite
-          rw [← h_contra] at h_rm2_aborted
-          rcases h_rm_prepare with ⟨h_rm_working, _⟩
-          simp at h_rm_working
-          rw [h_rm2_aborted] at h_rm_working
-          injection h_rm_working with h_val_eq
-          injection h_val_eq
-        have h_unchanged_rm2_state: s'.rmState[rm₂]? = s.rmState[rm₂]? := by
-          rcases h_rm_prepare with ⟨_, h_update_rm_state, _⟩
-          simp [h_update_rm_state, Std.HashMap.getElem?_insert]
-          simp [h_rm_neq_rm2]
-        simp [h_unchanged_rm2_state, h_rm2_aborted]
-        have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_prepare]
-        simp [h_unchanged_tm_prepared, h_rm2_not_prepared]
-        have h_prepared_in_msgs: Message.Prepared rm₂ ∉ s'.msgs ↔ Message.Prepared rm₂ ∉ s.msgs := by
-          simp [h_rm_prepare, h_rm2_notin_msgs]
-          by_contra h_rm2_eq_rm -- assume the opposite
-          rw [h_rm2_eq_rm] at h_rm_neq_rm2
-          simp at h_rm_neq_rm2
-        simp [h_prepared_in_msgs, h_rm2_notin_msgs]
+-- Effort: 1.5
+-- This is where I have found that lemmas 5 and 6 had extra constraints that we do not need!
+-- After removing them, the proof took 5 minutes. This required refactoring the other proofs.
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma5 s' := by
+    unfold lemma5
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_commit_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+    unfold lemma5 at h_lemma5_s
+    exact h_lemma5_s
+
+-- Effort: 1m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma5 s' := by
+    unfold lemma5
+    -- the rest is generated by copilot
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_tm_state, h_unchanged_msgs]
+    rcases h_inv with ⟨_, _, _, _, h_lemma5_s, _⟩
+    unfold lemma5 at h_lemma5_s
+    exact h_lemma5_s
 
 -- Effort: 5m
 lemma invariant_is_inductive_tm_commit_lemma6
@@ -638,8 +1016,8 @@ lemma invariant_is_inductive_tm_abort_lemma6 (s: ProtocolState RM) (s': Protocol
     have h_tm_state_aborted: s'.tmState = TMState.Aborted := by simp [h_tm_abort]
     have h_tm_state_init: s.tmState = TMState.Init := by simp [h_tm_abort]
     simp [h_tm_state_aborted]
-    have h_unchanged_rm_state: s'.rmState = s.rmState := by simp [h_tm_abort]
-    simp [h_unchanged_rm_state]
+    --have h_unchanged_rm_state: s'.rmState = s.rmState := by simp [h_tm_abort]
+    --simp [h_unchanged_rm_state]
     unfold invariant at h_inv
     rcases h_inv with ⟨h_lemma1_s, _, _, _, _, h_lemma6_s⟩
     unfold lemma1 at h_lemma1_s
@@ -648,18 +1026,11 @@ lemma invariant_is_inductive_tm_abort_lemma6 (s: ProtocolState RM) (s': Protocol
       unfold lemma6 at h_lemma6_s
       apply h_lemma6_s at h_contra
       simp [h_tm_state_init] at h_contra
-      have h_no_rm_committed: (∃ rm: RM, s.rmState[rm]? = some RMState.Committed) → False := by
-        intro h_committed
-        simp [h_tm_state_init] at h_lemma1_s
-        rcases h_committed with ⟨rm, h_committed⟩
-        specialize h_lemma1_s rm
-        simp [h_lemma1_s] at h_committed
-      simp [*] at h_no_rm_committed
     simp [h_no_commit_msg]
 
 -- Effort: 7m
 lemma invariant_is_inductive_tm_receive_prepared_lemma6 (s: ProtocolState RM) (s': ProtocolState RM)
-  (rm: RM) (h_all: ∀ rm: RM, rm ∈ s.all) (h_inv: invariant s) (h_tm_rcv_prepared: tm_rcv_prepared s s' rm): lemma6 s' := by
+  (rm: RM) (h_inv: invariant s) (h_tm_rcv_prepared: tm_rcv_prepared s s' rm): lemma6 s' := by
     unfold lemma6
     unfold tm_rcv_prepared at h_tm_rcv_prepared
     unfold invariant at h_inv
@@ -678,13 +1049,6 @@ lemma invariant_is_inductive_tm_receive_prepared_lemma6 (s: ProtocolState RM) (s
       simp [h_commit]
       simp [h_commit] at h_lemma6_s
       simp [h_tm_state_init] at h_lemma6_s
-      rcases h_lemma6_s with ⟨h_tm_prepared_eq_all, h_rm_state_committed⟩
-      simp [h_rm_state_committed]
-      have h_unchanged_all: s'.all = s.all := by simp [h_tm_rcv_prepared]
-      simp [h_unchanged_all]
-      have h_tm_prepared: s'.tmPrepared = s.tmPrepared ∪ {rm} := by simp [h_tm_rcv_prepared]
-      rw [h_tm_prepared, h_tm_prepared_eq_all]
-      simp [h_all]
 
 -- Effort: 20m
 lemma invariant_is_inductive_rm_prepare_lemma6 (s: ProtocolState RM) (s': ProtocolState RM)
@@ -706,25 +1070,54 @@ lemma invariant_is_inductive_rm_prepare_lemma6 (s: ProtocolState RM) (s': Protoc
       rcases h_inv with ⟨_, _, _, _, _, h_lemma6_s⟩
       unfold lemma6 at h_lemma6_s
       simp [h_commit] at h_lemma6_s
-      rcases h_lemma6_s with ⟨h_tm_prepared_eq_all, h_tm_committed_or_rm_committed⟩
-      simp [h_tm_prepared_eq_all]
-      cases h_tm_committed_or_rm_committed
-      case inl h_tm_state_committed =>
-        simp [h_tm_state_committed]
+      exact h_lemma6_s
 
-      case inr h_rm_state_committed =>
-        rcases h_rm_state_committed with ⟨rm₂, h_rm2_committed⟩
-        have h_rm2_neq_rm:  rm ≠ rm₂ := by
-          by_contra h_contra -- assume the opposite
-          rw [← h_contra] at h_rm2_committed
-          simp [h_rm2_committed] at h_rm_prepare
-        have h_rm2_committed: s'.rmState[rm₂]? = RMState.Committed := by
-          rcases h_rm_prepare with ⟨_, h_update_rm_state, _⟩
-          simp [h_update_rm_state, Std.HashMap.getElem?_insert]
-          simp [h_rm2_neq_rm, h_rm2_committed]
-        have h: ∃ rm: RM, s'.rmState[rm]? = some RMState.Committed := by
-          exists rm₂
-        simp [h]
+-- Effort: 15m
+lemma invariant_is_inductive_rm_abort_lemma6 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_abort: rm_choose_to_abort s s' rm): lemma6 s' := by
+    unfold lemma6
+    unfold rm_choose_to_abort at h_rm_abort
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_abort]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_abort]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_abort]
+    have h_unchanged_all: s'.all = s.all := by simp [h_rm_abort]
+    have h_rm_aborted: s'.rmState = s.rmState.insert rm RMState.Aborted := by simp [h_rm_abort]
+    simp [h_unchanged_msgs, h_unchanged_tm_prepared, h_unchanged_tm_state, h_unchanged_all]
+    rcases h_inv with ⟨_, _, _, _, _, h_lemma6_s⟩
+    unfold lemma6 at h_lemma6_s
+    by_cases h_commit: Message.Commit ∈ s.msgs
+    case neg => simp [h_commit]
+    case pos =>
+      simp [h_commit] at h_lemma6_s; simp [h_commit]
+      exact h_lemma6_s
+
+-- Effort: 5m
+lemma invariant_is_inductive_rm_rcv_commit_msg_lemma6 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma6 s' := by
+    unfold lemma6
+    unfold rm_rcv_commit_msg at h_rm_rcv_commit_msg
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_commit_msg]
+    have h_unchanged_all: s'.all = s.all := by simp [h_rm_rcv_commit_msg]
+    simp [h_unchanged_msgs, h_unchanged_tm_prepared, h_unchanged_tm_state, h_unchanged_all]
+    rcases h_inv with ⟨_, _, _, _, _, h_lemma6_s⟩
+    unfold lemma6 at h_lemma6_s
+    exact h_lemma6_s
+
+-- Effort: 2m
+lemma invariant_is_inductive_rm_rcv_abort_msg_lemma6 (s: ProtocolState RM) (s': ProtocolState RM)
+  (rm: RM) (h_inv: invariant s) (h_rm_rcv_abort_msg: rm_rcv_abort_msg s s' rm): lemma6 s' := by
+    unfold lemma6
+    unfold rm_rcv_abort_msg at h_rm_rcv_abort_msg
+    have h_unchanged_msgs: s'.msgs = s.msgs := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_tm_state: s'.tmState = s.tmState := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_all: s'.all = s.all := by simp [h_rm_rcv_abort_msg]
+    have h_unchanged_tm_prepared: s'.tmPrepared = s.tmPrepared := by simp [h_rm_rcv_abort_msg]
+    simp [h_unchanged_msgs, h_unchanged_tm_state, h_unchanged_all, h_unchanged_tm_prepared]
+    rcases h_inv with ⟨_, _, _, _, _, h_lemma6_s⟩
+    unfold lemma6 at h_lemma6_s
+    exact h_lemma6_s
 
 /--
  Showing that `invariant` is inductive, that is, it is preserved by the transition relation.
@@ -747,7 +1140,7 @@ theorem invariant_is_inductive (s: ProtocolState RM) (s': ProtocolState RM)
         . apply And.intro
           . exact invariant_is_inductive_tm_commit_lemma4 s s' h_inv h_tm_commit
           . apply And.intro
-            . exact invariant_is_inductive_tm_commit_lemma5 s s' h_all h_inv h_tm_commit
+            . exact invariant_is_inductive_tm_commit_lemma5 s s' h_inv h_tm_commit
             . exact invariant_is_inductive_tm_commit_lemma6 s s' h_tm_commit
 
   case inr h_rest =>
@@ -782,7 +1175,7 @@ theorem invariant_is_inductive (s: ProtocolState RM) (s': ProtocolState RM)
               . exact invariant_is_inductive_tm_receive_prepared_lemma4 s s' rm h_inv h_tm_rcv_prepared
               . apply And.intro
                 . exact invariant_is_inductive_tm_receive_prepared_lemma5 s s' rm h_inv h_tm_rcv_prepared
-                . exact invariant_is_inductive_tm_receive_prepared_lemma6 s s' rm h_all h_inv h_tm_rcv_prepared
+                . exact invariant_is_inductive_tm_receive_prepared_lemma6 s s' rm h_inv h_tm_rcv_prepared
 
       case inr h_rest =>
         cases h_rest
@@ -799,10 +1192,49 @@ theorem invariant_is_inductive (s: ProtocolState RM) (s': ProtocolState RM)
                 . apply And.intro
                   . exact invariant_is_inductive_rm_prepare_lemma5 s s' rm h_inv h_rm_prepare
                   . exact invariant_is_inductive_rm_prepare_lemma6 s s' rm h_inv h_rm_prepare
+
         case inr h_rest =>
           cases h_rest
           case inl h_rm_abort =>
-            sorry
+            -- action rm_choose_to_abort
+            apply And.intro
+            . exact invariant_is_inductive_rm_abort_lemma1 s s' rm h_inv h_rm_abort
+            . apply And.intro
+              . exact invariant_is_inductive_rm_abort_lemma2 s s' rm h_inv h_rm_abort
+              . apply And.intro
+                . exact invariant_is_inductive_rm_abort_lemma3 s s' rm h_inv h_rm_abort
+                . apply And.intro
+                  . exact invariant_is_inductive_rm_abort_lemma4 s s' rm h_inv h_rm_abort
+                  . apply And.intro
+                    . exact invariant_is_inductive_rm_abort_lemma5 s s' rm h_inv h_rm_abort
+                    . exact invariant_is_inductive_rm_abort_lemma6 s s' rm h_inv h_rm_abort
 
           case inr h_rest =>
-            sorry
+            cases h_rest
+            case inl h_rm_rcv_commit_msg =>
+              -- action rm_rcv_commit_msg
+              apply And.intro
+              . exact invariant_is_inductive_rm_rcv_commit_msg_lemma1 s s' rm h_inv h_rm_rcv_commit_msg
+              . apply And.intro
+                . exact invariant_is_inductive_rm_rcv_commit_msg_lemma2 s s' rm h_inv h_rm_rcv_commit_msg
+                . apply And.intro
+                  . apply invariant_is_inductive_rm_rcv_commit_msg_lemma3 s s' rm h_inv h_rm_rcv_commit_msg
+                  . apply And.intro
+                    . exact invariant_is_inductive_rm_rcv_commit_msg_lemma4 s s' rm h_inv h_rm_rcv_commit_msg
+                    . apply And.intro
+                      . exact invariant_is_inductive_rm_rcv_commit_msg_lemma5 s s' rm h_inv h_rm_rcv_commit_msg
+                      . exact invariant_is_inductive_rm_rcv_commit_msg_lemma6 s s' rm h_inv h_rm_rcv_commit_msg
+
+            case inr h_rm_rcv_abort_msg =>
+              -- action rm_rcv_abort_msg
+              apply And.intro
+              . exact invariant_is_inductive_rm_rcv_abort_msg_lemma1 s s' rm h_inv h_rm_rcv_abort_msg
+              . apply And.intro
+                . exact invariant_is_inductive_rm_rcv_abort_msg_lemma2 s s' rm h_inv h_rm_rcv_abort_msg
+                . apply And.intro
+                  . apply invariant_is_inductive_rm_rcv_abort_msg_lemma3 s s' rm h_inv h_rm_rcv_abort_msg
+                  . apply And.intro
+                    . exact invariant_is_inductive_rm_rcv_abort_msg_lemma4 s s' rm h_inv h_rm_rcv_abort_msg
+                    . apply And.intro
+                      . exact invariant_is_inductive_rm_rcv_abort_msg_lemma5 s s' rm h_inv h_rm_rcv_abort_msg
+                      . exact invariant_is_inductive_rm_rcv_abort_msg_lemma6 s s' rm h_inv h_rm_rcv_abort_msg
