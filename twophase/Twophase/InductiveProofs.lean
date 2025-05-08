@@ -810,7 +810,6 @@ lemma invariant_is_inductive_rm_rcv_commit_msg_lemma4 (s: ProtocolState RM) (s':
       have h_rm_committed: s'.rmState[rm]? = some RMState.Committed := by
         rcases h_rm_rcv_commit_msg with ⟨_, h_update_rm_state, _⟩
         simp [h_update_rm_state]
-      --have h_prepared_in_msgs: Message.Prepared rm ∈ s'.msgs := by simp [h_rm_rcv_commit_msg]
       have h_not_working: s'.rmState[rm]? ≠ some RMState.Working := by
         by_contra h_contra -- assume the opposite
         rw [h_contra] at h_rm_committed
@@ -1017,8 +1016,6 @@ lemma invariant_is_inductive_tm_abort_lemma6 (s: ProtocolState RM) (s': Protocol
     have h_tm_state_aborted: s'.tmState = TMState.Aborted := by simp [h_tm_abort]
     have h_tm_state_init: s.tmState = TMState.Init := by simp [h_tm_abort]
     simp [h_tm_state_aborted]
-    --have h_unchanged_rm_state: s'.rmState = s.rmState := by simp [h_tm_abort]
-    --simp [h_unchanged_rm_state]
     unfold invariant at h_inv
     rcases h_inv with ⟨h_lemma1_s, _, _, _, _, h_lemma6_s⟩
     unfold lemma1 at h_lemma1_s
