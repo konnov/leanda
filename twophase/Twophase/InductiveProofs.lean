@@ -13,6 +13,7 @@ Authors: Igor Konnov, 2025
 import Twophase.Propositional
 import Mathlib.Data.Finset.Basic
 import Std.Data.HashMap.Lemmas
+import Mathlib.Data.Finset.Basic
 
 -- The abstract type of resource managers.
 variable { RM : Type } [DecidableEq RM] [Hashable RM]
