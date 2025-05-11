@@ -8,8 +8,8 @@ how Lean's features match the features of TLA<sup>+</sup>.
 Available specifications:
 
  - [Two-phase commit](./twophase/README.md). See the [blog
-   post](https://protocols-made-fun.com/lean/2025/04/25/lean-two-phase.html) that
-   presents our decisions in details:
+   post 1](https://protocols-made-fun.com/lean/2025/04/25/lean-two-phase.html) on specification
+   and [blog post 2](https://protocols-made-fun.com/lean/2025/05/10/lean-two-phase-proofs.html) in proofs with Lean4:
 
    - [Functional specification](./twophase/Twophase/Functional.lean)
    - [System specification](./twophase/Twophase/System.lean)
