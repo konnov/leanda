@@ -962,9 +962,9 @@ lemma invariant_is_inductive_rm_abort_lemma5 (s: ProtocolState RM) (s': Protocol
       unfold lemma5 at h_lemma5_s
       exact h_lemma5_s
 
--- Effort: 1.5
 -- This is where I have found that lemmas 5 and 6 had extra constraints that we do not need!
 -- After removing them, the proof took 5 minutes. This required refactoring the other proofs.
+-- Effort: 1.5h
 lemma invariant_is_inductive_rm_rcv_commit_msg_lemma5 (s: ProtocolState RM) (s': ProtocolState RM)
   (rm: RM) (h_inv: invariant s) (h_rm_rcv_commit_msg: rm_rcv_commit_msg s s' rm): lemma5 s' := by
     unfold lemma5
