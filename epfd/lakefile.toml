@@ -1,0 +1,14 @@
+name = "epfd"
+version = "0.1.0"
+defaultTargets = ["epfd"]
+
+[[lean_lib]]
+name = "Epfd"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+
+[[lean_exe]]
+name = "epfd"
+root = "Main"
