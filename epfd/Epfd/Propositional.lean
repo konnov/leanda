@@ -40,10 +40,12 @@ variable (s': ProtocolState Proc)
   A process `dst` receives a heartbeat request from `src`.
   -/
 def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
-    Message.HeartbeatRequest src dst timestamp ∈ s.msgs
-  ∧ isMessageTimely GST MsgDelay timestamp s.clock
-  ∧ s'.rcvd = s.rcvd ∪ { Message.HeartbeatRequest src dst timestamp }
-  ∧ s'.msgs = s.msgs ∪ { Message.HeartbeatReply dst src s.clock }
+  let req := { kind := MsgTag.HeartbeatRequest, src, dst, timestamp }
+  req ∈ s.sent
+  ∧ isMsgTimely GST MsgDelay timestamp s.clock
+  ∧ s'.rcvd = s.rcvd ∪ { req }
+  ∧ let reply := { kind := MsgTag.HeartbeatReply, dst, src, timestamp := s.clock }
+    s'.sent = s.sent ∪ { reply }
   ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed
   ∧ s'.clock = s.clock
@@ -56,12 +58,13 @@ def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   A process `dst` receives a heartbeat reply from `src`.
   -/
 def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
-    Message.HeartbeatReply src dst timestamp ∈ s.msgs
-  ∧ isMessageTimely GST MsgDelay timestamp s.clock
-  ∧ s'.rcvd = s.rcvd ∪ { Message.HeartbeatReply src dst timestamp }
+  let reply := { kind := MsgTag.HeartbeatReply, src, dst, timestamp }
+  reply ∈ s.sent
+  ∧ isMsgTimely GST MsgDelay timestamp s.clock
+  ∧ s'.rcvd = s.rcvd ∪ { reply }
   ∧ let nextAlive := s.alive[dst]! ∪ { src }
     s'.alive = s.alive.insert dst nextAlive
-  ∧ s'.msgs = s.msgs
+  ∧ s'.sent = s.sent
   ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed
   ∧ s'.clock = s.clock
@@ -88,7 +91,9 @@ def timeout (p: Proc) :=
     let nextSuspected := s.all.filter isSuspected
     s'.suspected = s.suspected.insert p nextSuspected
   -- send heartbeat requests to all processes, including `p` itself
-  ∧ s'.msgs = s.msgs ∪ s.all.image (fun q => Message.HeartbeatRequest p q s.clock)
+  ∧ s'.sent = s.sent ∪ s.all.image (fun q =>
+      { kind := MsgTag.HeartbeatRequest, src := p, dst := q, timestamp := s.clock }
+    )
   -- set alive to empty and reset the timer
   ∧ s'.alive = s.alive.insert p ∅
   ∧ s'.nextTimeout = s.nextTimeout.insert p (s.clock + s.delay[p]!)
@@ -106,7 +111,7 @@ def crash (p: Proc) :=
     p ∉ s.crashed
   ∧ s'.crashed = s.crashed ∪ { p }
   ∧ s'.all = s.all
-  ∧ s'.msgs = s.msgs
+  ∧ s'.sent = s.sent
   ∧ s'.rcvd = s.rcvd
   ∧ s'.clock = s.clock
   ∧ s'.alive = s.alive
@@ -122,7 +127,7 @@ def advance_clock (delta: ℕ) :=
   ∧ s'.clock = s.clock + delta
   ∧ s'.crashed = s.crashed
   ∧ s'.all = s.all
-  ∧ s'.msgs = s.msgs
+  ∧ s'.sent = s.sent
   ∧ s'.rcvd = s.rcvd
   ∧ s'.alive = s.alive
   ∧ s'.suspected = s.suspected
@@ -141,7 +146,7 @@ def init_map {α: Type} (all: List Proc) (v: α) : Std.HashMap Proc α :=
 def init (all: List Proc): Prop :=
     s.all = all.toFinset
   ∧ s.crashed = ∅
-  ∧ s.msgs = ∅
+  ∧ s.sent = ∅
   ∧ s.rcvd = ∅
   ∧ s.clock = 0
   ∧ s.alive = init_map all ∅
@@ -153,10 +158,71 @@ def init (all: List Proc): Prop :=
   The transition relation of the protocol.
   -/
 def next: Prop :=
-  ∃ delta: ℕ, advance_clock s s' delta
-  ∨ ∃ p q: Proc,
-      timeout InitDelay s s' p
-    ∨ crash s s' p
-    ∨ ∃ timestamp: ℕ,
-        rcv_heartbeat_request GST MsgDelay s s' p q timestamp
-      ∨ rcv_heartbeat_reply GST MsgDelay s s' p q timestamp
+  ∃ delta: ℕ,
+    advance_clock s s' delta
+    ∨ ∃ p q: Proc,
+        timeout InitDelay s s' p
+        ∨ crash s s' p
+        ∨ ∃ timestamp: ℕ,
+            rcv_heartbeat_request GST MsgDelay s s' p q timestamp
+            ∨ rcv_heartbeat_reply GST MsgDelay s s' p q timestamp
+
+/--
+  Does a sequence of states `seq` satisfy the reliable communication property?
+  -/
+def is_reliable_communication (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∀ i: ℕ,
+    ∀ m ∈ (seq i).sent,
+      ∃ j: ℕ,
+        let s_j := seq j
+        j ≥ i
+        ∧ isMsgTimely GST MsgDelay m.timestamp s_j.clock
+        ∧ m ∈ s_j.rcvd ∨ m.dst ∈ s_j.crashed
+
+/--
+  Does a sequence of states `seq` process timeouts fairly?
+  -/
+def is_fair_timeout (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∀ i: ℕ,
+    let s_i := seq i
+    -- if `p` has not crashed, and `p` has a timeout at `s_i.clock`,
+    -- then `p` should process the timeout before the global clock advances
+    ∀ p ∈ s_i.all \ s_i.crashed,
+      s_i.nextTimeout[p]! == s_i.clock →
+        ∃ j: ℕ,
+          let s_j := seq j
+          j ≥ i ∧ s_j.clock == s_i.clock ∧ s_j.nextTimeout[p]! > s_i.clock
+
+/--
+  The global clock is advanced from time to time.
+  -/
+def is_clock_fair (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∀ i: ℕ,
+    ∃ j: ℕ,
+      j > i ∧ j > i ∧ (seq j).clock > (seq i).clock
+
+/--
+  An infinite sequence of protocol states is a path, if every pair
+  of states `(s_i, s_{i+1})` is a transition via `next`.
+  A path does not have to start with an initial state.
+  -/
+def is_path (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∀ i: ℕ, next InitDelay GST MsgDelay (seq i) (seq (i + 1))
+
+/--
+  An infinite sequence of protocol states is a run, if it starts
+  with an initial states and it is a run.
+  -/
+def is_run (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  let s0 := seq 0
+  init InitDelay s0 s0.all.toList
+    ∧ is_path InitDelay GST MsgDelay seq
+
+/--
+  Does a sequence of states `seq` represent a fair run of the protocol?
+  -/
+def is_fair_run (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  is_run InitDelay GST MsgDelay seq
+  ∧ is_reliable_communication GST MsgDelay seq
+  ∧ is_fair_timeout seq
+  ∧ is_clock_fair seq
