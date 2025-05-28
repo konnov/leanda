@@ -41,7 +41,8 @@ variable (s': ProtocolState Proc)
   -/
 def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   let req := { kind := MsgTag.HeartbeatRequest, src, dst, timestamp }
-  req ∈ s.sent
+  dst ∉ s.crashed
+  ∧ req ∈ s.sent
   ∧ isMsgTimely GST MsgDelay timestamp s.clock
   ∧ s'.rcvd = s.rcvd ∪ { req }
   ∧ let reply := { kind := MsgTag.HeartbeatReply, dst, src, timestamp := s.clock }
@@ -59,7 +60,8 @@ def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   -/
 def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   let reply := { kind := MsgTag.HeartbeatReply, src, dst, timestamp }
-  reply ∈ s.sent
+  dst ∉ s.crashed
+  ∧ reply ∈ s.sent
   ∧ isMsgTimely GST MsgDelay timestamp s.clock
   ∧ s'.rcvd = s.rcvd ∪ { reply }
   ∧ let nextAlive := s.alive[dst]! ∪ { src }
@@ -76,7 +78,8 @@ def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   A process `p` timeouts.
   -/
 def timeout (p: Proc) :=
-    s.clock ≥ s.nextTimeout[p]!
+  p ∉ s.crashed
+  ∧ s.clock ≥ s.nextTimeout[p]!
   -- if `p` suspects an alive process, increase the delay
   ∧ let nextDelay :=
       if s.alive[p]! ∩ s.suspected[p]! ≠ ∅
@@ -84,16 +87,17 @@ def timeout (p: Proc) :=
       else s.delay[p]!
     s'.delay = s.delay.insert p nextDelay
   -- recompute the set of suspected processes
-  ∧ let isSuspected (q: Proc) :=
-      q ∉ s.alive[p]! ∧ q ∉ s.suspected[p]!         -- trigger Suspect q
-        ∨ ((q ∉ s.alive[p]! ∨ q ∉ s.suspected[p]!)  -- trigger Restore q
-           ∧ q ∈ s.suspected[p]!)
-    let nextSuspected := s.all.filter isSuspected
+  ∧ let nextSuspected := s.all \ s.alive[p]!
+      /- q ∉ s.alive[p]! is equivalent to the original code:
+        on q ∉ s.alive[p]! ∧ q ∉ s.suspected[p]! trigger Suspect q
+        on q ∈ s.alive[p]! ∧ q ∈ s.suspected[p]! trigger Restore q
+        else keep q ∈ s.suspected[p]!
+       -/
     s'.suspected = s.suspected.insert p nextSuspected
   -- send heartbeat requests to all processes, including `p` itself
-  ∧ s'.sent = s.sent ∪ s.all.image (fun q =>
-      { kind := MsgTag.HeartbeatRequest, src := p, dst := q, timestamp := s.clock }
-    )
+  ∧ s'.sent = s.sent ∪ s.all.image (fun q => {
+      kind := MsgTag.HeartbeatRequest, src := p, dst := q, timestamp := s.clock
+    })
   -- set alive to empty and reset the timer
   ∧ s'.alive = s.alive.insert p ∅
   ∧ s'.nextTimeout = s.nextTimeout.insert p (s.clock + s.delay[p]!)
@@ -104,8 +108,8 @@ def timeout (p: Proc) :=
   ∧ s'.clock = s.clock
 
 /--
-  A process `p` crashes. Note that this action is not part of the protocol
-  itself, but rather a part of the environment (or the adversary).
+  A process `p` crashes. This action is not part of the protocol itself, but
+  rather a part of the environment (or the adversary).
   -/
 def crash (p: Proc) :=
     p ∉ s.crashed
@@ -120,11 +124,11 @@ def crash (p: Proc) :=
   ∧ s'.nextTimeout = s.nextTimeout
 
 /--
-  The global system clock advances.
+  The global system clock advances. We advance the clock by exactly one unit.
+  If we had a rational clock, we would have to advance it by `delta` units.
   -/
-def advance_clock (delta: ℕ) :=
-    delta > 0
-  ∧ s'.clock = s.clock + delta
+def advance_clock :=
+  s'.clock = s.clock + 1
   ∧ s'.crashed = s.crashed
   ∧ s'.all = s.all
   ∧ s'.sent = s.sent
@@ -158,14 +162,37 @@ def init (all: List Proc): Prop :=
   The transition relation of the protocol.
   -/
 def next: Prop :=
-  ∃ delta: ℕ,
-    advance_clock s s' delta
-    ∨ ∃ p q: Proc,
-        timeout InitDelay s s' p
-        ∨ crash s s' p
-        ∨ ∃ timestamp: ℕ,
-            rcv_heartbeat_request GST MsgDelay s s' p q timestamp
-            ∨ rcv_heartbeat_reply GST MsgDelay s s' p q timestamp
+  advance_clock s s'
+  ∨ ∃ p q: Proc,
+      timeout InitDelay s s' p
+      ∨ crash s s' p
+      ∨ ∃ t: ℕ,
+          rcv_heartbeat_request GST MsgDelay s s' p q t
+          ∨ rcv_heartbeat_reply GST MsgDelay s s' p q t
+
+/--
+  Does a sequence satisfy *strong completess*?
+  We want to prove that every *fair run* (see below) of the protocol
+  satisfies this property.
+  -/
+def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∃ i: ℕ,
+    let s_i := seq i
+    ∀ k: ℕ, ∀ p q: Proc,
+      let s_k := seq k
+      k ≥ i ∧ p ∉ s_i.crashed ∧ q ∈ s_i.crashed → q ∈ s_k.suspected[p]!
+
+/--
+  Does a sequence of states satisfy *eventual strong accuracy*?
+  We want to prove that every *fair run* (see below) of the protocol
+  satisfies this property.
+  -/
+def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  ∃ i: ℕ,
+    ∀ k: ℕ, ∀ p q: Proc,
+      let s_i := seq i
+      let s_k := seq k
+      k ≥ i ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed → q ∉ s_k.suspected[p]!
 
 /--
   Does a sequence of states `seq` satisfy the reliable communication property?
@@ -188,18 +215,18 @@ def is_fair_timeout (seq: ℕ → (ProtocolState Proc)) : Prop :=
     -- if `p` has not crashed, and `p` has a timeout at `s_i.clock`,
     -- then `p` should process the timeout before the global clock advances
     ∀ p ∈ s_i.all \ s_i.crashed,
-      s_i.nextTimeout[p]! == s_i.clock →
+      s_i.nextTimeout[p]! = s_i.clock →
         ∃ j: ℕ,
           let s_j := seq j
-          j ≥ i ∧ s_j.clock == s_i.clock ∧ s_j.nextTimeout[p]! > s_i.clock
+          j ≥ i ∧ s_j.clock = s_i.clock ∧ s_j.nextTimeout[p]! > s_i.clock
 
 /--
   The global clock is advanced from time to time.
   -/
-def is_clock_fair (seq: ℕ → (ProtocolState Proc)) : Prop :=
+def is_fair_clock (seq: ℕ → (ProtocolState Proc)) : Prop :=
   ∀ i: ℕ,
     ∃ j: ℕ,
-      j > i ∧ j > i ∧ (seq j).clock > (seq i).clock
+      j > i ∧ (seq j).clock = (seq i).clock + 1
 
 /--
   An infinite sequence of protocol states is a path, if every pair
@@ -207,7 +234,8 @@ def is_clock_fair (seq: ℕ → (ProtocolState Proc)) : Prop :=
   A path does not have to start with an initial state.
   -/
 def is_path (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  ∀ i: ℕ, next InitDelay GST MsgDelay (seq i) (seq (i + 1))
+  ∀ i: ℕ,
+    next InitDelay GST MsgDelay (seq i) (seq (i + 1))
 
 /--
   An infinite sequence of protocol states is a run, if it starts
@@ -225,4 +253,4 @@ def is_fair_run (seq: ℕ → (ProtocolState Proc)) : Prop :=
   is_run InitDelay GST MsgDelay seq
   ∧ is_reliable_communication GST MsgDelay seq
   ∧ is_fair_timeout seq
-  ∧ is_clock_fair seq
+  ∧ is_fair_clock seq
