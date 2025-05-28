@@ -78,7 +78,7 @@ def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   A process `p` timeouts.
   -/
 def timeout (p: Proc) :=
-  p ∉ s.crashed
+    p ∉ s.crashed
   ∧ s.clock = s.nextTimeout[p]!
   -- if `p` suspects an alive process, increase the delay
   ∧ let nextDelay :=
@@ -128,7 +128,7 @@ def crash (p: Proc) :=
   If we had a rational clock, we would have to advance it by `delta` units.
   -/
 def advance_clock :=
-  s'.clock = s.clock + 1
+    s'.clock = s.clock + 1
   ∧ s'.crashed = s.crashed
   ∧ s'.all = s.all
   ∧ s'.sent = s.sent
@@ -163,12 +163,12 @@ def init (all: List Proc): Prop :=
   -/
 def next: Prop :=
   advance_clock Proc s s'
-  ∨ ∃ p q: Proc,
-      timeout Proc InitDelay s s' p
-      ∨ crash Proc s s' p
-      ∨ ∃ t: ℕ,
-          rcv_heartbeat_request Proc GST MsgDelay s s' p q t
-          ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
+    ∨ ∃ p q: Proc,
+        timeout Proc InitDelay s s' p
+          ∨ crash Proc s s' p
+          ∨ ∃ t: ℕ,
+              rcv_heartbeat_request Proc GST MsgDelay s s' p q t
+                ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
 
 -- The protocol properties to prove. Here we define the properties
 -- as close to the original formulation as possible.
@@ -183,7 +183,7 @@ def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) : Prop :=
     let s_i := seq i
     ∀ k: ℕ, ∀ p q: Proc,
       let s_k := seq k
-      k ≥ i ∧ p ∉ s_i.crashed ∧ q ∈ s_i.crashed → q ∈ s_k.suspected[p]!
+      (k ≥ i ∧ p ∉ s_i.crashed ∧ q ∈ s_i.crashed) → q ∈ s_k.suspected[p]!
 
 /--
   Does a sequence of states satisfy *eventual strong accuracy*?
@@ -195,7 +195,7 @@ def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :
     ∀ k: ℕ, ∀ p q: Proc,
       let s_i := seq i
       let s_k := seq k
-      k ≥ i ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed → q ∉ s_k.suspected[p]!
+      (k ≥ i ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed) → q ∉ s_k.suspected[p]!
 
 end properties
 
@@ -261,26 +261,24 @@ def is_reliable_communication (tr: Trace Proc) : Prop :=
       ∃ j: ℕ,
         let { s := s_j, a := a_j } := (tr j)
         j ≥ i
-        ∧ isMsgTimely GST MsgDelay m.timestamp s_j.clock
-        ∧ m.dst ∈ s_j.crashed
-          ∨ match m.kind with
-            | MsgTag.HeartbeatReply =>
-                a_j = Action.RcvHeartbeatReply m.src m.dst m.timestamp
-            | MsgTag.HeartbeatRequest =>
-                a_j = Action.RcvHeartbeatRequest m.src m.dst m.timestamp
+          ∧ isMsgTimely GST MsgDelay m.timestamp s_j.clock
+          ∧ m.dst ∈ s_j.crashed
+            ∨ match m.kind with
+              | MsgTag.HeartbeatReply =>
+                  a_j = Action.RcvHeartbeatReply m.src m.dst m.timestamp
+              | MsgTag.HeartbeatRequest =>
+                  a_j = Action.RcvHeartbeatRequest m.src m.dst m.timestamp
 
 /--
   Does a sequence of states `seq` process timeouts fairly?
   -/
-def is_fair_timeout (tr: Trace Proc) : Prop :=
+def is_fair_timeout (tr: Trace Proc): Prop :=
   ∀ i: ℕ,
     ∀ p: Proc,
-      ∃ j: ℕ,
-        let s_i := (tr i).s
-        let { s := s_j, a := a_j } := (tr j)
-        j ≥ i
-          ∧ s_j.clock = s_i.nextTimeout[p]!
-          ∧ p ∉ s_j.crashed → a_j = Action.Timeout p
+      ∃ k: ℕ,
+        (p ∉ (tr (i + k - 1)).s.crashed → (tr (i + k)).a = Action.Timeout p)
+          -- TODO: is this a bit too strong in the presence of is_fair_clock?
+          ∧ (tr (i + k)).s.clock = (tr i).s.nextTimeout[p]!
 
 /--
   The global clock is advanced from time to time.
@@ -313,8 +311,8 @@ def is_run (tr: Trace Proc) : Prop :=
   -/
 def is_fair_run (tr: Trace Proc) : Prop :=
   is_run Proc InitDelay GST MsgDelay tr
-  ∧ is_reliable_communication Proc GST MsgDelay tr
-  ∧ is_fair_timeout Proc tr
-  ∧ is_fair_clock Proc tr
+    ∧ is_reliable_communication Proc GST MsgDelay tr
+    ∧ is_fair_timeout Proc tr
+    ∧ is_fair_clock Proc tr
 
 end fairness
