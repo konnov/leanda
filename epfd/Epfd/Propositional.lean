@@ -19,7 +19,7 @@ import Epfd.Basic
 import Mathlib.Data.Finset.Image
 
 -- The abstract type of processes
-variable {Proc : Type} [DecidableEq Proc] [Hashable Proc] [Repr Proc]
+variable (Proc : Type) [DecidableEq Proc] [Hashable Proc] [Repr Proc]
 
 -- The initial delay Δ used by the processes
 variable (InitDelay: ℕ)
@@ -79,7 +79,7 @@ def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   -/
 def timeout (p: Proc) :=
   p ∉ s.crashed
-  ∧ s.clock ≥ s.nextTimeout[p]!
+  ∧ s.clock = s.nextTimeout[p]!
   -- if `p` suspects an alive process, increase the delay
   ∧ let nextDelay :=
       if s.alive[p]! ∩ s.suspected[p]! ≠ ∅
@@ -153,25 +153,28 @@ def init (all: List Proc): Prop :=
   ∧ s.sent = ∅
   ∧ s.rcvd = ∅
   ∧ s.clock = 0
-  ∧ s.alive = init_map all ∅
-  ∧ s.suspected = init_map all ∅
-  ∧ s.delay = init_map all InitDelay
-  ∧ s.nextTimeout = init_map all InitDelay
+  ∧ s.alive = init_map Proc all ∅
+  ∧ s.suspected = init_map Proc all ∅
+  ∧ s.delay = init_map Proc all InitDelay
+  ∧ s.nextTimeout = init_map Proc all InitDelay
 
 /--
   The transition relation of the protocol.
   -/
 def next: Prop :=
-  advance_clock s s'
+  advance_clock Proc s s'
   ∨ ∃ p q: Proc,
-      timeout InitDelay s s' p
-      ∨ crash s s' p
+      timeout Proc InitDelay s s' p
+      ∨ crash Proc s s' p
       ∨ ∃ t: ℕ,
-          rcv_heartbeat_request GST MsgDelay s s' p q t
-          ∨ rcv_heartbeat_reply GST MsgDelay s s' p q t
+          rcv_heartbeat_request Proc GST MsgDelay s s' p q t
+          ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
 
+-- The protocol properties to prove. Here we define the properties
+-- as close to the original formulation as possible.
+section properties
 /--
-  Does a sequence satisfy *strong completess*?
+  Does a sequence of states satisfy *strong completess*?
   We want to prove that every *fair run* (see below) of the protocol
   satisfies this property.
   -/
@@ -194,63 +197,124 @@ def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :
       let s_k := seq k
       k ≥ i ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed → q ∉ s_k.suspected[p]!
 
+end properties
+
+-- Additional machinery to define fairness, as we would not be able
+-- to prove the above properties without precisely defining fairness.
+section fairness
+
 /--
-  Does a sequence of states `seq` satisfy the reliable communication property?
+  The type of actions that can be performed by the protocol.
   -/
-def is_reliable_communication (seq: ℕ → (ProtocolState Proc)) : Prop :=
+inductive Action where
+  | Init
+  | AdvanceClock
+  | Timeout(p: Proc)
+  | Crash(p: Proc)
+  | RcvHeartbeatRequest(src: Proc) (dst: Proc) (timestamp: ℕ)
+  | RcvHeartbeatReply(src: Proc) (dst: Proc) (timestamp: ℕ)
+
+/--
+  A refinement of `next` that specifies the action taken.
+  -/
+def next_a (a: @Action Proc): Prop :=
+match a with
+| Action.Init =>
+    s' = s -- dummy action
+| Action.AdvanceClock =>
+    advance_clock Proc s s'
+| Action.Timeout p =>
+    timeout Proc InitDelay s s' p
+| Action.Crash p =>
+    crash Proc s s' p
+| Action.RcvHeartbeatRequest src dst timestamp =>
+    rcv_heartbeat_request Proc GST MsgDelay s s' src dst timestamp
+| Action.RcvHeartbeatReply src dst timestamp =>
+    rcv_heartbeat_reply Proc GST MsgDelay s s' src dst timestamp
+
+/--
+  A convenience structure for pairs of states and actions.
+  -/
+structure StateAction where
+  s: ProtocolState Proc
+  a: @Action Proc
+
+/--
+  A trace is an infinite sequence of pairs:
+   - a state and
+   - the action that produced the state from the previous one.
+
+  The initial state is produced by the dummy action `Init`.
+  We do not enforce the states to be connected by the `next` relation.
+  See `is_path` and `is_run` for stronger conditions.
+  -/
+abbrev Trace := ℕ → StateAction Proc
+
+/--
+  Does a trace satisfy the reliable communication property:
+  Every messages that is sent by a process `p`
+  is received by every correct process `q` at the right time window later.
+  -/
+def is_reliable_communication (tr: Trace Proc) : Prop :=
   ∀ i: ℕ,
-    ∀ m ∈ (seq i).sent,
+    ∀ m ∈ (tr i).s.sent,
       ∃ j: ℕ,
-        let s_j := seq j
+        let { s := s_j, a := a_j } := (tr j)
         j ≥ i
         ∧ isMsgTimely GST MsgDelay m.timestamp s_j.clock
-        ∧ m ∈ s_j.rcvd ∨ m.dst ∈ s_j.crashed
+        ∧ m.dst ∈ s_j.crashed
+          ∨ match m.kind with
+            | MsgTag.HeartbeatReply =>
+                a_j = Action.RcvHeartbeatReply m.src m.dst m.timestamp
+            | MsgTag.HeartbeatRequest =>
+                a_j = Action.RcvHeartbeatRequest m.src m.dst m.timestamp
 
 /--
   Does a sequence of states `seq` process timeouts fairly?
   -/
-def is_fair_timeout (seq: ℕ → (ProtocolState Proc)) : Prop :=
+def is_fair_timeout (tr: Trace Proc) : Prop :=
   ∀ i: ℕ,
-    let s_i := seq i
-    -- if `p` has not crashed, and `p` has a timeout at `s_i.clock`,
-    -- then `p` should process the timeout before the global clock advances
-    ∀ p ∈ s_i.all \ s_i.crashed,
-      s_i.nextTimeout[p]! = s_i.clock →
-        ∃ j: ℕ,
-          let s_j := seq j
-          j ≥ i ∧ s_j.clock = s_i.clock ∧ s_j.nextTimeout[p]! > s_i.clock
+    ∀ p: Proc,
+      ∃ j: ℕ,
+        let s_i := (tr i).s
+        let { s := s_j, a := a_j } := (tr j)
+        j ≥ i
+          ∧ s_j.clock = s_i.nextTimeout[p]!
+          ∧ p ∉ s_j.crashed → a_j = Action.Timeout p
 
 /--
   The global clock is advanced from time to time.
   -/
-def is_fair_clock (seq: ℕ → (ProtocolState Proc)) : Prop :=
+def is_fair_clock (tr: Trace Proc) : Prop :=
   ∀ i: ℕ,
     ∃ j: ℕ,
-      j > i ∧ (seq j).clock = (seq i).clock + 1
+      j > i ∧ (tr j).a = Action.AdvanceClock
 
 /--
   An infinite sequence of protocol states is a path, if every pair
   of states `(s_i, s_{i+1})` is a transition via `next`.
   A path does not have to start with an initial state.
   -/
-def is_path (seq: ℕ → (ProtocolState Proc)) : Prop :=
+def is_path (tr: Trace Proc) : Prop :=
   ∀ i: ℕ,
-    next InitDelay GST MsgDelay (seq i) (seq (i + 1))
+    next_a Proc InitDelay GST MsgDelay (tr i).s (tr (i + 1)).s (tr (i + 1)).a
 
 /--
   An infinite sequence of protocol states is a run, if it starts
   with an initial states and it is a run.
   -/
-def is_run (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  let s0 := seq 0
-  init InitDelay s0 s0.all.toList
-    ∧ is_path InitDelay GST MsgDelay seq
+def is_run (tr: Trace Proc) : Prop :=
+  let s0 := (tr 0).s
+  init Proc InitDelay s0 s0.all.toList
+    ∧ is_path Proc InitDelay GST MsgDelay tr
 
 /--
   Does a sequence of states `seq` represent a fair run of the protocol?
   -/
-def is_fair_run (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  is_run InitDelay GST MsgDelay seq
-  ∧ is_reliable_communication GST MsgDelay seq
-  ∧ is_fair_timeout seq
-  ∧ is_fair_clock seq
+def is_fair_run (tr: Trace Proc) : Prop :=
+  is_run Proc InitDelay GST MsgDelay tr
+  ∧ is_reliable_communication Proc GST MsgDelay tr
+  ∧ is_fair_timeout Proc tr
+  ∧ is_fair_clock Proc tr
+
+end fairness
