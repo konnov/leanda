@@ -45,7 +45,8 @@ def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   ∧ req ∈ s.sent
   ∧ isMsgTimely GST MsgDelay timestamp s.clock
   ∧ s'.rcvd = s.rcvd ∪ { req }
-  ∧ let reply := { kind := MsgTag.HeartbeatReply, dst, src, timestamp := s.clock }
+  ∧ let reply :=
+      { kind := MsgTag.HeartbeatReply, src := dst, dst := src, timestamp := s.clock }
     s'.sent = s.sent ∪ { reply }
   ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed

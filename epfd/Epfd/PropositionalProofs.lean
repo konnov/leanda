@@ -215,6 +215,12 @@ lemma eventually_crashes_stabilize
   -- but I have not found a good instance of it in Mathlib4 yet.
   sorry
 
+/--
+  If a process `p` never crashes, then it resets `alive[p]!` to `∅`
+  infinitely often.
+
+  In temporal logic, `[](p ∉ crashed) → []<>(alive[p]! = ∅)`.
+  -/
 lemma eventually_alive_is_empty
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
@@ -246,7 +252,7 @@ lemma eventually_alive_is_empty
     simp [h_alive_updated]
   exact ⟨ j, h_alive_is_empty ⟩
 
-/-- An auxilliary lemma to get rid of the annoying case of i = 0. -/
+/-- An auxilliary lemma to get rid of the annoying case of `i = 0`. -/
 lemma when_clock_is_positive_step_is_non_init
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
@@ -370,8 +376,8 @@ lemma no_sent_from_the_future
       simp [h] at h_next
       unfold rcv_heartbeat_request at h_next; simp [h_next]
       let reply := {
-        kind := MsgTag.HeartbeatReply, src := src,
-        dst := dst, timestamp := s.clock : Msg Proc
+        kind := MsgTag.HeartbeatReply, src := dst,
+        dst := src, timestamp := s.clock : Msg Proc
       }
       -- we have to show that messages in `s'.sent` satisfy `P`
       have h_update_sent: s'.sent = s.sent ∪ { reply } := by
@@ -411,47 +417,120 @@ lemma crashed_process_does_not_send
         ∀ m ∈ (tr (k + i)).s.sent,
           m.src = p → m.timestamp ≤ (tr k).s.clock := by
   intros i m h_m_in_sent h_src
-  -- By monotonicity, p ∈ crashed at all times ≥ k
+  -- By monotonicity, `p ∈ crashed` at all times ≥ k
   have h_p_crashed_later : ∀ j, p ∈ (tr (k + j)).s.crashed :=
-    fun j => crashed_is_monotonic_in_fair_run InitDelay GST MsgDelay tr h_is_fair_run p k h_p_crashed j
-  -- Consider when m was added to sent: it must have been sent by p before it crashed
-  -- But after k, p is crashed and cannot send
-  -- So m must have been sent at or before time k
-  -- Let's show that for any message m with src = p in (tr (i + k)).s.sent, its timestamp ≤ (tr k).s.clock
-  -- We proceed by induction on i
+    fun j => crashed_is_monotonic_in_fair_run
+      InitDelay GST MsgDelay tr h_is_fair_run p k h_p_crashed j
   induction i with
   | zero =>
-    -- Base case: i = 0, so time = k
-    -- At time k, p just crashed, so any message from p in sent must have timestamp ≤ (tr k).s.clock
-    -- But p cannot send at time k or later, so any such m must have timestamp ≤ (tr k).s.clock
-    -- (If the protocol allows sending at the instant of crashing, then timestamp = (tr k).s.clock is possible)
-    -- So the claim holds
-    exact le_rfl
+    -- Show that the claim holds for `k` itself. Apply `no_sent_from_the_future`.
+    have h := no_sent_from_the_future InitDelay GST MsgDelay tr h_is_fair_run k
+    specialize h m h_m_in_sent
+    exact h
   | succ i ih =>
-    -- Inductive step: assume the claim holds for i, show for i + 1
-    -- Consider m ∈ (tr (k + i + 1)).s.sent with m.src = p
-    -- By protocol, sent can only grow by messages sent in this step
-    -- So either m ∈ (tr (k + i)).s.sent, or m was added at step (k + i + 1)
     let s := (tr (k + i)).s
     let s' := (tr (k + i + 1)).s
     let a := (tr (k + i + 1)).a
-    have h_path : next_a Proc InitDelay GST MsgDelay s s' a :=
-      by
-        unfold is_fair_run at h_is_fair_run
-        rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
-        unfold is_run at h_is_run
-        rcases h_is_run with ⟨ _, h_is_path ⟩
-        unfold is_path at h_is_path
-        exact h_is_path (k + i)
-    have h_p_crashed_now := h_p_crashed_later (i + 1)
-    -- For any m ∈ s'.sent with m.src = p, m ∈ s.sent
-    have h_sent_subset : ∀ m, m ∈ s'.sent ∧ m.src = p → m ∈ s.sent :=
-      by
-        intro m ⟨h_in, h_src⟩
-        cases a with
-        | Init | AdvanceClock | Timeout _ | Crash _ | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _ =>
-          exact h_in
-    exact ih m (h_sent_subset m ⟨h_m_in_sent, h_src⟩) h_src
+    have h_m_in_sent: m ∈ s'.sent := by exact h_m_in_sent
+    -- specialize next_a to `s`, `s'`, and `a`
+    have h_next : next_a Proc InitDelay GST MsgDelay s s' a := by
+      unfold is_fair_run at h_is_fair_run
+      rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
+      unfold is_run at h_is_run
+      rcases h_is_run with ⟨ _, h_is_path ⟩
+      unfold is_path at h_is_path
+      exact h_is_path (k + i)
+    have h_p_crashed_at_s := h_p_crashed_later i
+    -- If `m.src = p`, then `m ∈ s.sent`
+    have h_m_in_old_sent : m.src = p → m ∈ s.sent := by
+      intro h_src
+      cases h_a: a with
+      | Init =>
+        unfold next_a at h_next; simp [h_a] at h_next;
+        rw [h_next] at h_m_in_sent; exact h_m_in_sent
+
+      | AdvanceClock =>
+        unfold next_a at h_next; simp [h_a] at h_next;
+        have :s'.sent = s.sent := by unfold advance_clock at h_next; simp [h_next]
+        rw [this] at h_m_in_sent; exact h_m_in_sent
+
+      | Crash _ =>
+        unfold next_a at h_next; simp [h_a] at h_next;
+        have :s'.sent = s.sent := by unfold crash at h_next; simp [h_next]
+        rw [this] at h_m_in_sent; exact h_m_in_sent
+
+      | RcvHeartbeatReply _ _ _ =>
+        unfold next_a at h_next; simp [h_a] at h_next;
+        have :s'.sent = s.sent := by
+          unfold rcv_heartbeat_reply at h_next
+          simp [h_next]
+        rw [this] at h_m_in_sent; exact h_m_in_sent
+
+      | Timeout q =>
+        unfold next_a at h_next; simp [h_a] at h_next; unfold timeout at h_next;
+        have h_q_ne_p: q ≠ p := by
+          by_contra h_eq
+          rw [h_eq] at h_next
+          unfold s at h_next
+          simp [h_p_crashed_at_s] at h_next
+        let newSent := Finset.image (fun r => {
+            kind := MsgTag.HeartbeatRequest, src := q, dst := r,
+            timestamp := s.clock : Msg Proc
+          }) s.all
+        have h_update_sent: s'.sent = s.sent ∪ newSent := by
+          unfold newSent
+          simp [h_next]
+        rw [h_update_sent] at h_m_in_sent
+        -- either `m` is in `s.sent`, or `m` is in `newSent`
+        have h_m_in_sent_or_in_newSent: m ∈ s.sent ∨ m ∈ newSent := by
+          rw [Finset.mem_union] at h_m_in_sent
+          exact h_m_in_sent
+        -- however, `m` cannot be in `newSent`, as `m.src = p` and `q ≠ p`
+        have h_no_p_in_newSent: m ∉ newSent := by
+          by_contra h_m_in_newSent
+          -- apply `Finset.mem_image` to get the definition of `m`
+          have h_m_preimage := Finset.mem_image.mp h_m_in_newSent
+          rcases h_m_preimage with ⟨ r, r_in_all, h_m_eq ⟩
+          have h_m_eq := Eq.symm h_m_eq -- swap the arguments
+          have m_src_eq_q: m.src = q := by rw [h_m_eq]
+          rw [m_src_eq_q] at h_src
+          exact h_q_ne_p h_src
+        simp [h_no_p_in_newSent] at h_m_in_sent_or_in_newSent
+        exact h_m_in_sent_or_in_newSent
+
+      | RcvHeartbeatRequest src dst ts =>
+        unfold next_a at h_next; simp [h_a] at h_next
+        unfold rcv_heartbeat_request at h_next
+        have h_dst_ne_p: dst ≠ p := by
+          by_contra h_eq
+          rw [h_eq] at h_next
+          unfold s at h_next
+          simp [h_p_crashed_at_s] at h_next
+        let reply := {
+          kind := MsgTag.HeartbeatReply, src := dst,
+          dst := src, timestamp := s.clock : Msg Proc
+        }
+        have h_update_sent: s'.sent = s.sent ∪ { reply } := by
+          unfold reply; simp [h_next]
+        rw [h_update_sent] at h_m_in_sent
+        -- either `m` is in `s.sent`, or `m` is `reply`
+        have h_m_in_sent_or_reply: m ∈ s.sent ∨ m = reply := by
+          let h := Finset.mem_union.mp h_m_in_sent
+          cases h with
+          | inl h_in_sent => simp [h_in_sent]
+          | inr h_eq_reply => simp [Finset.mem_singleton.mp h_eq_reply]
+        -- `m` cannot be `reply`, as `reply.src = dst` and `dst ≠ p`
+        have : m ≠ reply := by
+          by_contra h_eq_reply
+          unfold reply at h_eq_reply
+          simp [h_eq_reply] at h_src
+          rw [h_src] at h_dst_ne_p
+          simp at h_dst_ne_p
+        simp [this] at h_m_in_sent_or_reply
+        exact h_m_in_sent_or_reply
+    -- apply the inductive hypothesis `ih`
+    simp [h_src] at h_m_in_old_sent
+    exact ih h_m_in_old_sent
 
 /--
   For every fair run, if `p` never crashes and `q` does,
