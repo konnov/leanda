@@ -132,7 +132,11 @@ lemma clock_is_monotonic_in_fair_run
     -- now just apply transitivity
     exact le_trans ik h_last_step_mono
 
-/-- The set `crashed` grows monotonically in a fair run. -/
+/--
+  The set `crashed` grows monotonically in a fair run.
+
+  In temporal logic, `∀p: Proc, [](p ∈ crashed) → [](p ∈ s.crashed))`.
+  -/
 lemma crashed_is_monotonic_in_fair_run
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
@@ -156,6 +160,8 @@ lemma crashed_is_monotonic_in_fair_run
 /--
   Every fair run covers every clock value `t`. Note that this requires fairness.
   Otherwise, the clock may not advance at all.
+
+  In temporal logic, `∀t ∈ ℕ, <>(clock ≥ t)`.
   -/
 lemma eventually_clock_is_t
     (tr: Trace Proc)
@@ -258,8 +264,8 @@ lemma when_clock_is_positive_step_is_non_init
   linarith [h_clock_is_zero, h_clock_is_positive]
 
 /--
-  Show that no sent message has a timestamp in the future, that is,
-  `[](∀ m ∈ sent, m.timestamp ≤ s.clock)`.
+  Show that no sent message has a timestamp in the future. In temporal logic,
+  `[](∀ m ∈ sent, m.timestamp ≤ clock)`.
 
   Surprisingly, this requires quite a long proof, though there is nothing
   groundbreaking in it.
@@ -390,12 +396,19 @@ lemma no_sent_from_the_future
   -- invoke the inductive schema
   exact inductive_inv InitDelay GST MsgDelay tr h_is_fair_run h_init_P h_step_P
 
+/--
+  If a process `p` crashes at some point, then no message sent by `p`
+  can contain a timestamp greater than the clock value at the time of crashing.
+
+  In temporal logic,
+  `∀p: Proc, []((p ∈ crashed) → ∃c ∈ ℕ, c = clock ∧ [](∀m ∈ sent, m.src = p → m.timestamp ≤ c))`.
+  -/
 lemma crashed_process_does_not_send
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (p: Proc) (k: ℕ) (h_p_crashed: p ∈ (tr k).s.crashed):
       ∀ i: ℕ,
-        ∀ m ∈ (tr (i + k)).s.sent,
+        ∀ m ∈ (tr (k + i)).s.sent,
           m.src = p → m.timestamp ≤ (tr k).s.clock := by
   intros i m h_m_in_sent h_src
   -- By monotonicity, p ∈ crashed at all times ≥ k
@@ -464,6 +477,15 @@ lemma eventually_crashes_implies_never_alive
   have h_eventually_magic_time :=
     eventually_clock_is_t InitDelay GST MsgDelay tr h_is_fair_run magic_time
   rcases h_eventually_magic_time with ⟨ at_magic_time, h_clock_at_magic_time ⟩
+  -- prove this fact right away, we will need it much later
+  have h_magic_time_after_q_crashed: at_magic_time ≥ at_q_crashed := by
+    by_contra h_contra; simp at h_contra
+    unfold magic_time at h_clock_at_magic_time
+    have h: (tr at_magic_time).s.clock ≥ clock_at_q_crashed + MsgDelay + 1 := by omega
+    have h_order: at_q_crashed ≥ at_magic_time := by linarith [h_clock_at_magic_time, h]
+    have h_clock_order := clock_is_monotonic_in_fair_run InitDelay GST MsgDelay
+      tr h_is_fair_run at_magic_time at_q_crashed h_order
+    linarith [h_clock_order, h_clock_at_magic_time]
   -- we have to show this auxilliary to make `eventually_alive_is_empty` work
   have h_clock_is_positive: (tr at_magic_time).s.clock > 0 := by omega
   have h_positive := when_clock_is_positive_step_is_non_init
@@ -487,7 +509,8 @@ lemma eventually_crashes_implies_never_alive
     | succ k ih =>
       -- we have to show that `alive[p]!` remains empty
       unfold is_fair_run at h_is_fair_run
-      rcases h_is_fair_run with ⟨ h_is_run, _, _, _ ⟩
+      let h_is_fair_run_copy := h_is_fair_run -- otherwise, h_is_fair_run is destroyed
+      rcases h_is_fair_run_copy with ⟨ h_is_run, _, _, _ ⟩
       unfold is_run at h_is_run
       rcases h_is_run with ⟨ _, h_is_path ⟩
       unfold is_path at h_is_path
@@ -498,7 +521,7 @@ lemma eventually_crashes_implies_never_alive
       -- assume that it does not hold at some point `k + 1`
       by_contra h_contra
       unfold next_a at h_is_path
-      -- introduce shortcuts, so we don't get lost
+      -- introduce shortcuts, so we don't get lost in indices
       let s := (tr (at_magic_time + at_alive_empty + k)).s
       let s' := (tr (at_magic_time + at_alive_empty + (k + 1))).s
       let a := (tr (at_magic_time + at_alive_empty + (k + 1))).a
@@ -508,7 +531,7 @@ lemma eventually_crashes_implies_never_alive
       rw  [← h_s, ← h_s', ← h_a] at h_is_path
       rw [← h_s] at ih
       rw [← h_s'] at h_contra
-      -- do case analysis on `a`
+      -- do case analysis on the action `a`
       cases h: a
       case Init =>
         simp [h] at h_is_path
@@ -563,7 +586,57 @@ lemma eventually_crashes_implies_never_alive
           case pos =>
             -- `q = src` is the hardest case. We have to show that the crashed `q`
             -- could not send a heartbeat to `p` at this point.
-            sorry
+            let reply := {
+              kind := MsgTag.HeartbeatReply, src := src, dst := dst, timestamp := ts: Msg Proc
+            }
+            -- from the step, we have that `reply ∈ s'.sent` and `isMsgTimely GST MsgDelay ts s.clock`
+            have h_reply_in_sent: reply ∈ s.sent := by
+              unfold reply
+              simp [reply] at h_is_path
+              simp [h_is_path]
+            have h_msg_timely: isMsgTimely GST MsgDelay ts s.clock = true := by simp [h_is_path]
+            simp [isMsgTimely] at h_msg_timely
+            -- now, recall that `q` has crashed at `at_q_crashed` and it cannot send any longer
+            have h_q_does_not_send :=
+              crashed_process_does_not_send InitDelay GST MsgDelay
+                tr h_is_fair_run q at_q_crashed h_q_crashed
+            -- we have to find the point `i` relative to q's crash point that corresponds to `s`
+            have h_i: ∃ i: ℕ, (at_q_crashed + i) = (at_magic_time + at_alive_empty + k) := by
+              -- since `at_magic_time ≥ at_q_crashed`, we can find such `i`
+              have h: at_magic_time + at_alive_empty + k ≥ at_q_crashed := by
+                linarith [h_magic_time_after_q_crashed]
+              use at_magic_time + at_alive_empty + k - at_q_crashed
+              simp [h]
+            rcases h_i with ⟨ i, h_i_eq ⟩
+            specialize h_q_does_not_send i reply
+            unfold reply at h_q_does_not_send
+            simp at h_q_does_not_send
+            -- swap `src` and `q` in h_q_eq_src
+            have h_src_eq_q: src = q := by simp [h_q_eq_src]
+            -- show that timestamp `ts` is not later than the clock at `at_q_crashed`
+            have h_ts_before_crash: ts ≤ (tr at_q_crashed).s.clock := by
+              simp [h_src_eq_q] at h_q_does_not_send
+              rw [h_i_eq] at h_q_does_not_send
+              unfold reply at h_reply_in_sent; unfold s at h_reply_in_sent
+              rw [h_src_eq_q] at h_reply_in_sent
+              simp [h_reply_in_sent] at h_q_does_not_send
+              exact h_q_does_not_send
+            -- we derive an upper bound and a lower bound on `s.clock`
+            have h_clock_upper_bound:
+                s.clock ≤ max (GST + MsgDelay) (clock_at_q_crashed + MsgDelay) := by omega
+            have h_clock_lower_bound: s.clock ≥ magic_time := by
+              unfold s
+              unfold magic_time
+              simp [h_magic_time_after_q_crashed]
+              have h_order: at_magic_time + at_alive_empty + k ≥ at_magic_time := by linarith
+              have h_clock_order :=
+                clock_is_monotonic_in_fair_run InitDelay GST MsgDelay
+                  tr h_is_fair_run at_magic_time (at_magic_time + at_alive_empty + k) h_order
+              simp [h_clock_at_magic_time, h_clock_order]
+              omega
+            unfold magic_time at h_clock_lower_bound
+            -- now the upper bound is smaller than the lower bound, contradiction!
+            linarith [h_clock_lower_bound, h_clock_upper_bound]
         case neg =>
           -- `p ≠ dst`, so `s'.alive[p]! = s.alive[p]!`
           simp [Std.HashMap.getElem!_insert] at h_contra
