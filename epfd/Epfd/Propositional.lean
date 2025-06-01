@@ -19,7 +19,7 @@ import Epfd.Basic
 import Mathlib.Data.Finset.Image
 
 -- The abstract type of processes
-variable (Proc : Type) [DecidableEq Proc] [Hashable Proc] [Repr Proc]
+variable (Proc : Type) [Fintype Proc] [DecidableEq Proc] [Hashable Proc] [Repr Proc]
 
 -- The initial delay Δ used by the processes
 variable (InitDelay: ℕ)
@@ -48,7 +48,6 @@ def rcv_heartbeat_request (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   ∧ let reply :=
       { kind := MsgTag.HeartbeatReply, src := dst, dst := src, timestamp := s.clock }
     s'.sent = s.sent ∪ { reply }
-  ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed
   ∧ s'.clock = s.clock
   ∧ s'.alive = s.alive
@@ -68,7 +67,6 @@ def rcv_heartbeat_reply (src: Proc) (dst: Proc) (timestamp: ℕ) :=
   ∧ let nextAlive := s.alive[dst]! ∪ { src }
     s'.alive = s.alive.insert dst nextAlive
   ∧ s'.sent = s.sent
-  ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed
   ∧ s'.clock = s.clock
   ∧ s'.suspected = s.suspected
@@ -88,7 +86,7 @@ def timeout (p: Proc) :=
       else s.delay[p]!
     s'.delay = s.delay.insert p nextDelay
   -- recompute the set of suspected processes
-  ∧ let nextSuspected := s.all \ s.alive[p]!
+  ∧ let nextSuspected := Finset.univ \ s.alive[p]!
       /- q ∉ s.alive[p]! is equivalent to the original code:
         on q ∉ s.alive[p]! ∧ q ∉ s.suspected[p]! trigger Suspect q
         on q ∈ s.alive[p]! ∧ q ∈ s.suspected[p]! trigger Restore q
@@ -96,7 +94,7 @@ def timeout (p: Proc) :=
        -/
     s'.suspected = s.suspected.insert p nextSuspected
   -- send heartbeat requests to all processes, including `p` itself
-  ∧ s'.sent = s.sent ∪ s.all.image (fun q => {
+  ∧ s'.sent = s.sent ∪ Finset.univ.image (fun q => {
       kind := MsgTag.HeartbeatRequest, src := p, dst := q, timestamp := s.clock
     })
   -- set alive to empty and reset the timer
@@ -104,7 +102,6 @@ def timeout (p: Proc) :=
   ∧ s'.nextTimeout = s.nextTimeout.insert p (s.clock + s.delay[p]!)
   -- everything else remains unchanged
   ∧ s'.rcvd = s.rcvd
-  ∧ s'.all = s.all
   ∧ s'.crashed = s.crashed
   ∧ s'.clock = s.clock
 
@@ -115,7 +112,6 @@ def timeout (p: Proc) :=
 def crash (p: Proc) :=
     p ∉ s.crashed
   ∧ s'.crashed = s.crashed ∪ { p }
-  ∧ s'.all = s.all
   ∧ s'.sent = s.sent
   ∧ s'.rcvd = s.rcvd
   ∧ s'.clock = s.clock
@@ -131,7 +127,6 @@ def crash (p: Proc) :=
 def advance_clock :=
     s'.clock = s.clock + 1
   ∧ s'.crashed = s.crashed
-  ∧ s'.all = s.all
   ∧ s'.sent = s.sent
   ∧ s'.rcvd = s.rcvd
   ∧ s'.alive = s.alive
@@ -142,8 +137,8 @@ def advance_clock :=
 /--
   Initialize a map with the default value `v` for each process in `all`.
   -/
-def init_map {α: Type} (all: List Proc) (v: α) : Std.HashMap Proc α :=
-    all.foldl (fun m p => m.insert p v) (Std.HashMap.emptyWithCapacity 0)
+noncomputable def init_map {α: Type} (v: α) : Std.HashMap Proc α :=
+    Finset.univ.toList.foldl (fun m p => m.insert p v) (Std.HashMap.emptyWithCapacity 0)
 
 /--
   The initial state of the protocol.
@@ -154,10 +149,10 @@ def init (all: List Proc): Prop :=
   ∧ s.sent = ∅
   ∧ s.rcvd = ∅
   ∧ s.clock = 0
-  ∧ s.alive = init_map Proc all ∅
-  ∧ s.suspected = init_map Proc all ∅
-  ∧ s.delay = init_map Proc all InitDelay
-  ∧ s.nextTimeout = init_map Proc all InitDelay
+  ∧ s.alive = init_map Proc ∅
+  ∧ s.suspected = init_map Proc ∅
+  ∧ s.delay = init_map Proc InitDelay
+  ∧ s.nextTimeout = init_map Proc InitDelay
 
 /--
   The transition relation of the protocol.

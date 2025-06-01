@@ -12,7 +12,7 @@ import Mathlib.Tactic.Linarith
 import Mathlib.Data.Finset.Insert
 
 -- The abstract type of processes
-variable {Proc : Type} [DecidableEq Proc] [Hashable Proc]
+variable {Proc : Type} [Fintype Proc] [DecidableEq Proc] [Hashable Proc]
 
 -- The initial delay Δ used by the processes
 variable (InitDelay: ℕ)
@@ -318,7 +318,7 @@ lemma no_sent_from_the_future
       let newSent := Finset.image (fun q => {
           kind := MsgTag.HeartbeatRequest, src := p, dst := q,
           timestamp := s.clock : Msg Proc
-        }) s.all
+        }) Finset.univ
       have h_update_sent: s'.sent = s.sent ∪ newSent := by
         unfold newSent
         simp [h_next]
@@ -440,7 +440,7 @@ lemma crashed_process_does_not_send
         let newSent := Finset.image (fun r => {
             kind := MsgTag.HeartbeatRequest, src := q, dst := r,
             timestamp := s.clock : Msg Proc
-          }) s.all
+          }) Finset.univ
         have h_update_sent: s'.sent = s.sent ∪ newSent := by
           unfold newSent
           simp [h_next]
@@ -702,7 +702,7 @@ lemma eventually_crashes_implies_always_suspected
   rcases h_never_alive with ⟨ k, h_never_alive ⟩
   rcases h_is_fair_run with ⟨ h_is_run, _, h_is_fair_to, _ ⟩
   unfold is_fair_timeout at h_is_fair_to
-  -- find the next timeout of `p` after `k`
+  -- find the next timeout of `p` after `k`, we take `k + 1` to avoid `k = 0`
   specialize h_is_fair_to (k + 1) p
   unfold never_crashes at h_p_never_crashes
   simp [h_p_never_crashes] at h_is_fair_to
@@ -724,7 +724,6 @@ lemma eventually_crashes_implies_always_suspected
     -- `q` is not in `alive[p]!`, so it is suspected
     specialize h_never_alive j
     simp [h_never_alive]
-    sorry
   -- now prove by induction that `q` is suspected at all later points
   sorry
 

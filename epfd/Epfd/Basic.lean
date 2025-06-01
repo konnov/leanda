@@ -8,10 +8,15 @@ Authors: Igor Konnov, 2025
 
 import Std.Data.HashMap
 import Mathlib.Data.Finset.Basic
+import Mathlib.Data.Fintype.Basic
 
--- The abstract type of processes
-variable (Proc : Type) [DecidableEq Proc] [Hashable Proc] [Repr Proc]
+/-
+  An abstract type of all processes. It must be a finite type, so we can explicitly
+  refer to all processes in the system.
+ -/
+variable (Proc : Type) [Fintype Proc] [DecidableEq Proc] [Hashable Proc] [Repr Proc]
 
+/-- A message tag: `HeartbeatRequest` or `HeartbeatReply`. -/
 inductive MsgTag where
   | HeartbeatRequest
   | HeartbeatReply
