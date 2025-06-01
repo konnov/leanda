@@ -170,9 +170,13 @@ def next: Prop :=
 -- as close to the original formulation as possible.
 section properties
 /--
-  Does a sequence of states satisfy *strong completess*?
-  We want to prove that every *fair run* (see below) of the protocol
-  satisfies this property.
+  Does a sequence of states satisfy *strong completess*?  This is how it is
+  defined in the book: "Eventually, every process that crashes is permanently
+  suspected by every correct process." We want to prove that every *fair run*
+  (see below) of the protocol satisfies this property.
+
+  In temporal logic, it would be
+  `<>[](∀ p q: Proc, p ∉ crashed ∧ q ∈ crashed → q ∈ suspected[p]!)`.
   -/
 def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) : Prop :=
   ∃ i: ℕ,
@@ -182,9 +186,13 @@ def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) : Prop :=
       (k ≥ i ∧ p ∉ s_i.crashed ∧ q ∈ s_i.crashed) → q ∈ s_k.suspected[p]!
 
 /--
-  Does a sequence of states satisfy *eventual strong accuracy*?
-  We want to prove that every *fair run* (see below) of the protocol
-  satisfies this property.
+  Does a sequence of states satisfy *eventual strong accuracy*? This is how it
+  is defined in the book: "Eventually, every no correct process is suspected by
+  any correct process." We want to prove that every *fair run* (see below) of
+  the protocol satisfies this property.
+
+  In temporal logic, it would be
+  `<>[](∀ p q: Proc, p ∉ crashed ∧ q ∉ crashed → q ∉ suspected[p]!)`.
   -/
 def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :=
   ∃ i: ℕ,

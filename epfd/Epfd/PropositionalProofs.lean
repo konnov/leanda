@@ -195,7 +195,8 @@ lemma eventually_clock_is_t
     have h_mono_clock: (tr i).s.clock ≤ (tr (j - 1)).s.clock := by
       have h_j_gt_i: j > i := by simp [h_j_clock_advances]
       have pred_j_ge_k: j - 1 ≥ i := by linarith [h_j_gt_i]
-      apply clock_is_monotonic_in_fair_run InitDelay GST MsgDelay tr h_is_fair_run i (j - 1) pred_j_ge_k
+      apply clock_is_monotonic_in_fair_run
+        InitDelay GST MsgDelay tr h_is_fair_run i (j - 1) pred_j_ge_k
     have h_clock_j: (tr j).s.clock ≥ t + 1 := by linarith
     specialize h_clock_le_t j
     linarith [h_clock_j, h_clock_le_t]
@@ -791,21 +792,126 @@ def is_strongly_complete_simpler (tr: Trace Proc)
     → ∃ j: ℕ, ∀ k: ℕ,
         q ∈ (tr j).s.crashed → q ∈ (tr (j + k)).s.suspected[p]!
 
+/--
+  A set of processes `C` is a crashing set if every process in `C`
+  eventually crashes, and every process not in `C` never crashes.
+  In temporal logic, `∀ p ∈ C, <>(p ∈ crashed) ∧ ∀ q ∉ C, [](q ∉ crashed)`.
+ -/
+def is_crashing_set (tr: Trace Proc) (C: Finset Proc): Prop :=
+  ∀ p ∈ C,
+    eventually_crashes tr p
+  ∧ ∀ q ∈ Finset.univ \ C,
+    never_crashes tr q
+
+/--
+  Show that there exists a crashing set for every fair run.
+ -/
+lemma exists_crashing_set (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr):
+      ∃ C: Finset Proc, is_crashing_set tr C := by
+  sorry
+
+/--
+  For a set of crashing processes `C`, there is a point `k` such that all
+  processes in `C` are crashing from `k` onwards. In other word, there is a
+  joint point in the future where all processes in `C` are crashing. This
+  "obvious" property happened to be not so easy to prove. It requires
+  well-founded induction.
+
+  In temporal logic,
+  `(∀ p ∈ C, <>(p ∈ crashed)) → <>(∀ p ∈ C, p ∈ crashed)`.
+ -/
+lemma eventually_crashing_meet (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+      (C: Finset Proc) (h_crashing: ∀ p ∈ C, eventually_crashes tr p):
+        ∃ k: ℕ, ∀ p ∈ C,
+          ∀ i: ℕ, p ∈ (tr (k + i)).s.crashed := by
+  -- the statement that we want to prove
+  let P := fun (C: Finset Proc) =>
+    (∀ p ∈ C, eventually_crashes tr p)
+      → ∃ k: ℕ, ∀ p ∈ C,
+          ∀ i: ℕ, p ∈ (tr (k + i)).s.crashed
+  have base: P ∅ := by
+    -- when `C = ∅`, our statement is trivially true
+    unfold P; simp
+  have step: ∀ p C, p ∉ C → P C → P (insert p C) := by
+    intro p C h_a_not_in_C h_P
+    -- we have to show that `P (insert a C)` holds
+    unfold P at h_P
+    intro h_all_crash
+    have h_C_crash: ∀ q ∈ C, eventually_crashes tr q := by
+      intro p h_q_in_C
+      exact h_all_crash p (Finset.mem_insert_of_mem h_q_in_C)
+    have h_eventually_p_crashes: eventually_crashes tr p := by
+      -- `a` is in `insert a C`, so we can apply `h_all_crash`
+      exact h_all_crash p (Finset.mem_insert_self p C)
+    -- apply `h_P` to get the result for `C`
+    rcases h_P h_C_crash with ⟨ at_C_crashed, h_C_crashed ⟩
+    unfold eventually_crashes at h_eventually_p_crashes
+    rcases h_eventually_p_crashes with ⟨ at_p_crashed, h_p_crashed ⟩
+    let k := max at_C_crashed at_p_crashed
+    -- now we have to show that `∀ q ∈ insert a C, ∀ i: ℕ, q ∈ (tr (k + i)).s.crashed`
+    use k
+    intro q h_q_in_insert
+    by_cases h_q_eq_p: q = p
+    case pos =>
+      -- `q = p`, so we can use monotonicity of `p` crashing,
+      intro i -- relative to `k`, adjust the index to start from `at_p_crashed`
+      rw [h_q_eq_p]
+      let j := k + i - at_p_crashed
+      have h_j: at_p_crashed + j = k + i := by omega
+      have h_p_crashed_later :=
+        crashed_is_monotonic_in_fair_run InitDelay GST MsgDelay
+          tr h_is_fair_run p at_p_crashed h_p_crashed j
+      rw [h_j] at h_p_crashed_later
+      exact h_p_crashed_later
+    case neg =>
+      -- `q ≠ p`, so we can use the result for `C`
+      intro i -- relative to `k`
+      have h_q_in_C: q ∈ C := by
+        rw [Finset.mem_insert] at h_q_in_insert
+        simp [h_q_eq_p] at h_q_in_insert
+        exact h_q_in_insert
+      -- adjust the index to start from `at_C_crashed`
+      let j := k + i - at_C_crashed
+      have h_q_crashed_later := h_C_crashed q h_q_in_C j
+      have h_j: at_C_crashed + j = k + i := by omega
+      rw [h_j] at h_q_crashed_later
+      exact h_q_crashed_later
+  have : ∀ C: Finset Proc, P C :=
+    Finset.induction base step
+  exact this C h_crashing
+
 /-- Strong completeness hold for every run. -/
 theorem strong_completeness (tr: Trace Proc)
-    (h_all: ∀ p: Proc, p ∈ (tr 0).s.all)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (p: Proc) (q: Proc):
       (is_strongly_complete_simpler tr p q) := by
-  unfold is_fair_run at h_is_fair_run; unfold is_strongly_complete_simpler
-  rcases h_is_fair_run with ⟨ h_is_run, h_is_rel_comm, h_is_fair_to, h_is_fair_clock ⟩
-  intro h_p_is_correct
   sorry
+  --unfold is_fair_run at h_is_fair_run; unfold is_strongly_complete_simpler
+  --rcases h_is_fair_run with ⟨ h_is_run, h_is_rel_comm, h_is_fair_to, h_is_fair_clock ⟩
+  /-
+  intro h_p_is_correct
+  -- do case analysis on whether `q` crashes or not
+  by_cases h_q_eventually_crashes: ∃ i: ℕ, q ∈ (tr i).s.crashed
+  case pos =>
+    -- `q` crashes, so it is eventually suspected from some point `j` onwards
+    have h_eventually_suspected :=
+      eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
+        tr h_is_fair_run p q h_p_is_correct h_q_eventually_crashes
+    unfold eventually_q_is_always_suspected at h_eventually_suspected
+    rcases h_eventually_suspected with ⟨ j, h_suspected_always ⟩
+    -- now we have to show that `q` is suspected at all points after `j`
+    use j; intro k; intro h_q_crashed_at_j
+    exact h_suspected_always k
+  case neg =>
+    -- `q` never crashes, so the premise `q ∈ (tr i).s.crashed` is false
+    use 0; intro k
+    -/
 
 /-
 /-- Strong completeness hold for every run. -/
 theorem eventual_strong_accuracy (tr: Trace Proc)
-    (h_all: ∀ p: Proc, p ∈ (tr 0).s.all)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay run):
       (is_eventually_strongly_accurate tr) := by
   sorry
