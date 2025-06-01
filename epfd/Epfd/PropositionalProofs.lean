@@ -116,7 +116,7 @@ lemma clock_is_monotonic_in_fair_run
   induction k with
   | zero => simp
   | succ k ik =>
-    have h: i + k ≥ i := by omega
+    have h: i + k ≥ i := by linarith
     simp [h] at ik
     unfold is_fair_run at h_is_fair_run
     rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
@@ -188,7 +188,7 @@ lemma eventually_clock_is_t
     specialize h_is_path (j - 1)
     unfold next_a at h_is_path
 
-    have h_jj: j - 1 + 1 = j := by omega; -- JJ!
+    have h_jj: j - 1 + 1 = j := by omega -- JJ!
     rw [h_jj] at h_is_path -- replace `j - 1 + 1` with `j`
     have h_clock_advances_at_j: (tr j).a = Action.AdvanceClock := by simp [h_j_clock_advances]
     simp [h_clock_advances_at_j, advance_clock] at h_is_path
@@ -559,7 +559,7 @@ lemma eventually_crashes_implies_never_alive
       unfold is_path at h_is_path
       specialize h_is_path (at_magic_time + at_alive_empty + k)
       have h_indices: at_magic_time + at_alive_empty + k + 1 =
-        at_magic_time + at_alive_empty + (k + 1) := by omega
+        at_magic_time + at_alive_empty + (k + 1) := by rfl
       rw [h_indices] at h_is_path
       -- assume that it does not hold at some point `k + 1`
       by_contra h_contra
@@ -711,21 +711,76 @@ lemma eventually_crashes_implies_always_suspected
   rcases h_is_run with ⟨ _, h_is_path ⟩
   unfold is_path at h_is_path
   -- now, we have to show that `q` is suspected at `k + 1 + j`
-  specialize h_is_path (k + 1 + j - 1)
-  have h_dec_inc: k + 1 + j - 1 + 1 = k + 1 + j := by omega
-  rw [h_dec_inc] at h_is_path
-  unfold next_a at h_is_path
-  simp [h_is_timeout] at h_is_path
-  unfold timeout at h_is_path
   -- extract the update of the set `suspected[p]!`
-  rcases h_is_path with ⟨ _, _, _, h_suspected_updated, _ ⟩
-  have h_suspected_q: q ∈ (tr (k + 1 + j)).s.suspected[p]! := by
-    simp [h_suspected_updated]
+  have h_eventually_q_is_suspected: q ∈ (tr (k + 1 + j)).s.suspected[p]! := by
+    have h_next := h_is_path (k + 1 + j - 1)
+    have h_dec_inc: k + 1 + j - 1 + 1 = k + 1 + j := by omega
+    rw [h_dec_inc] at h_next
+    unfold next_a at h_next
+    simp [h_is_timeout] at h_next
+    unfold timeout at h_next
+    simp [h_next]
     -- `q` is not in `alive[p]!`, so it is suspected
     specialize h_never_alive j
     simp [h_never_alive]
   -- now prove by induction that `q` is suspected at all later points
-  sorry
+  have h_q_is_always_suspected:
+      ∀ i: ℕ, q ∈ (tr (k + 1 + j + i)).s.suspected[p]! := by
+    intro i
+    induction i with
+    | zero =>
+      -- we have shown that above
+      exact h_eventually_q_is_suspected
+    | succ i ih =>
+      -- we have to show that `q` is suspected at `k + 1 + j + (i + 1)`
+      specialize h_is_path (k + 1 + j + i)
+      -- normalize the indices
+      have h_indices: k + 1 + j + (i + 1) = k + 1 + j + i + 1 := by rfl
+      rw [h_indices]; subst_eqs
+      -- introduce shortcuts, so we don't get lost in the indices
+      let s := (tr (k + 1 + j + i)).s
+      let s' := (tr (k + 1 + j + i + 1)).s
+      -- do case analysis on the action `a`
+      unfold next_a at h_is_path
+      unfold advance_clock crash rcv_heartbeat_request rcv_heartbeat_reply at h_is_path
+      cases h_a: (tr (k + 1 + j + i + 1)).a with
+      | Init =>
+        simp [h_a] at h_is_path
+        rw [← h_is_path] at ih; exact ih
+
+      | AdvanceClock | Crash _ | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _=>
+        simp [h_a] at h_is_path
+        have h_keep_suspected: s'.suspected = s.suspected := by
+          unfold s s'; simp [h_is_path]
+        unfold s s' at h_keep_suspected
+        rw [← h_keep_suspected] at ih; exact ih
+
+      | Timeout r =>
+        simp [h_a] at h_is_path
+        unfold timeout at h_is_path
+        by_cases h_eq: r = p
+        case neg =>
+          -- `r ≠ p`, so `s'.suspected[p]! = s.suspected[p]!`
+          have h_keep_suspected: s'.suspected[p]! = s.suspected[p]! := by
+            unfold s s'
+            simp [h_is_path, Std.HashMap.getElem!_insert, h_eq]
+          rw [← h_keep_suspected] at ih; exact ih
+        case pos =>
+          -- `r = p`, so we have to show that `q` is suspected, as it is not in `alive[p]!`
+          let nextSuspected := Finset.univ \ s.alive[r]!
+          have h_update_suspected: s'.suspected[p]! = nextSuspected := by
+            unfold nextSuspected s s'
+            simp [h_is_path, Std.HashMap.getElem!_insert, h_eq]
+          unfold s' nextSuspected at h_update_suspected
+          rw [h_update_suspected, h_eq]
+          unfold s
+          -- now it remains to show that `q ∉ s.alive[p]!`
+          specialize h_never_alive (1 + j + i)
+          have : k + 1 + j + i = k + (1 + j + i) := by ac_rfl
+          simp [this, h_never_alive]
+  -- now apply h_suspected_always to get the result
+  unfold eventually_q_is_always_suspected
+  use k + 1 + j
 
 /--
  A simpler-to-prove property that implies `is_strongly_complete`.
