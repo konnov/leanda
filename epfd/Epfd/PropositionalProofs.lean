@@ -650,7 +650,7 @@ lemma eventually_crashes_implies_never_alive
             have h_ts_before_crash: ts ≤ (tr at_q_crashed).s.clock := by
               simp [h_src_eq_q] at h_q_does_not_send
               rw [h_i_eq] at h_q_does_not_send
-              unfold reply at h_reply_in_sent; unfold s at h_reply_in_sent
+              unfold reply s at h_reply_in_sent
               rw [h_src_eq_q] at h_reply_in_sent
               simp [h_reply_in_sent] at h_q_does_not_send
               exact h_q_does_not_send
@@ -658,8 +658,7 @@ lemma eventually_crashes_implies_never_alive
             have h_clock_upper_bound:
                 s.clock ≤ max (GST + MsgDelay) (clock_at_q_crashed + MsgDelay) := by omega
             have h_clock_lower_bound: s.clock ≥ magic_time := by
-              unfold s
-              unfold magic_time
+              unfold s magic_time
               simp [h_magic_time_after_q_crashed]
               have h_order: at_magic_time + at_alive_empty + k ≥ at_magic_time := by linarith
               have h_clock_order :=
