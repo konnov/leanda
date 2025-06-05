@@ -7,6 +7,7 @@ Authors: Igor Konnov, 2025
 -/
 
 import Epfd.Propositional
+import Epfd.TemporalLemmas
 
 import Mathlib.Tactic.Linarith
 import Mathlib.Data.Finset.Insert
@@ -41,11 +42,19 @@ def eventually_never_alive (tr: Trace Proc) (p q: Proc): Prop :=
     q ∉ (tr (i + k)).s.alive[p]!
 
 /--
+  `p` suspects `q` permanently from some point `k`, i.e.,
+  `tr[k,...] ⊧ [](q ∈ suspected[p])`.
+  -/
+def q_is_always_suspected (tr: Trace Proc) (p q: Proc) (i: ℕ): Prop :=
+  ∀ k: ℕ,
+    q ∈ (tr (i + k)).s.suspected[p]!
+
+/--
   Eventually, `p` suspects `q` permanently, i.e., `<>[](q ∈ suspected[p])`.
   -/
 def eventually_q_is_always_suspected (tr: Trace Proc) (p q: Proc): Prop :=
-  ∃ i: ℕ, ∀ k: ℕ,
-    q ∈ (tr (i + k)).s.suspected[p]!
+  ∃ i: ℕ,
+    q_is_always_suspected tr p q i
 
 /--
   An inductive proof schema to show that a state property `P` holds for all states
@@ -779,37 +788,15 @@ lemma eventually_crashes_implies_always_suspected
           have : k + 1 + j + i = k + (1 + j + i) := by ac_rfl
           simp [this, h_never_alive]
   -- now apply h_suspected_always to get the result
-  unfold eventually_q_is_always_suspected
+  unfold eventually_q_is_always_suspected q_is_always_suspected
   use k + 1 + j
-
-/--
- A simpler-to-prove property that implies `is_strongly_complete`.
- TODO: prove the implication!
- -/
-def is_strongly_complete_simpler (tr: Trace Proc)
-    (p: Proc) (q: Proc): Prop :=
-  (∀ i: ℕ, p ∉ (tr i).s.crashed)
-    → ∃ j: ℕ, ∀ k: ℕ,
-        q ∈ (tr j).s.crashed → q ∈ (tr (j + k)).s.suspected[p]!
 
 /--
   A set of processes `C` is a crashing set if every process in `C`
   eventually crashes, and every process not in `C` never crashes.
-  In temporal logic, `∀ p ∈ C, <>(p ∈ crashed) ∧ ∀ q ∉ C, [](q ∉ crashed)`.
  -/
 def is_crashing_set (tr: Trace Proc) (C: Finset Proc): Prop :=
-  ∀ p ∈ C,
-    eventually_crashes tr p
-  ∧ ∀ q ∈ Finset.univ \ C,
-    never_crashes tr q
-
-/--
-  Show that there exists a crashing set for every fair run.
- -/
-lemma exists_crashing_set (tr: Trace Proc)
-    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr):
-      ∃ C: Finset Proc, is_crashing_set tr C := by
-  sorry
+  ∀ p: Proc, p ∈ C ↔ eventually_crashes tr p
 
 /--
   For a set of crashing processes `C`, there is a point `k` such that all
@@ -882,32 +869,91 @@ lemma eventually_crashing_meet (tr: Trace Proc)
     Finset.induction base step
   exact this C h_crashing
 
+/--
+
+  For a set of crashing processes `C` and a trace `tr`, show that if for every
+  crashing process `q` and every correct process `p`, it holds that `p`
+  eventually suspects `q` forever, then there is a common time point `k` such
+  that all correct processes suspect all crashed processes forever.
+
+  In temporal logic, `∀ q ∈ Crashed, ∀ p ∈ Correct, <>[](q ∈ suspected[p]!)`
+  implies `<>[] ∀ q ∈ Crashed, ∀ p ∈ Correct, q ∈ suspected[p]!`.
+  -/
+lemma eventually_always_suspected_meet
+    (tr: Trace Proc)
+    (Crashed: Finset Proc)
+    (h_suspected:
+      ∀ q ∈ Crashed,
+        ∀ p ∈ Finset.univ \ Crashed,
+          eventually_q_is_always_suspected tr p q):
+      ∃ k: ℕ,
+        ∀ i: ℕ,
+          ∀ q ∈ Crashed,
+            ∀ p ∈ Finset.univ \ Crashed,
+              q ∈ (tr (k + i)).s.suspected[p]! := by
+  -- fix the set of correct processes
+  let Correct := Finset.univ \ Crashed
+  -- we have to bubble up `∃ k: ℕ` two times
+  -- bubble up `∃ k: ℕ` the first time
+  have bubble1: (q: Proc) → (h_q_crashed: q ∈ Crashed) →
+      ∃ k: ℕ, ∀ i: ℕ, ∀ p ∈ Correct, q ∈ (tr (k + i)).s.suspected[p]! := by
+    intro q h_q_crashed
+    specialize h_suspected q h_q_crashed
+    let P (i: ℕ) (p: Proc) := q ∈ (tr i).s.suspected[p]!
+    exact forall_FG_implies_FG_forall P Correct h_suspected
+  -- the predicate `P` to use in the next instance of `forall_FG_implies_FG_forall`
+  let P (i: ℕ) (q: Proc) :=
+    ∀ p ∈ Correct, q ∈ (tr i).s.suspected[p]!
+  -- bubble up `∃ k: ℕ` the second time
+  exact forall_FG_implies_FG_forall P Crashed bubble1
+
 /-- Strong completeness hold for every run. -/
 theorem strong_completeness (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (p: Proc) (q: Proc):
-      (is_strongly_complete_simpler tr p q) := by
-  sorry
-  --unfold is_fair_run at h_is_fair_run; unfold is_strongly_complete_simpler
-  --rcases h_is_fair_run with ⟨ h_is_run, h_is_rel_comm, h_is_fair_to, h_is_fair_clock ⟩
-  /-
-  intro h_p_is_correct
-  -- do case analysis on whether `q` crashes or not
-  by_cases h_q_eventually_crashes: ∃ i: ℕ, q ∈ (tr i).s.crashed
-  case pos =>
-    -- `q` crashes, so it is eventually suspected from some point `j` onwards
-    have h_eventually_suspected :=
-      eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
-        tr h_is_fair_run p q h_p_is_correct h_q_eventually_crashes
-    unfold eventually_q_is_always_suspected at h_eventually_suspected
-    rcases h_eventually_suspected with ⟨ j, h_suspected_always ⟩
-    -- now we have to show that `q` is suspected at all points after `j`
-    use j; intro k; intro h_q_crashed_at_j
-    exact h_suspected_always k
-  case neg =>
-    -- `q` never crashes, so the premise `q ∈ (tr i).s.crashed` is false
-    use 0; intro k
-    -/
+    (C: Finset Proc) (h_is_crashing_set: is_crashing_set tr C):
+      ∃ k: ℕ, ∀ i: ℕ, ∀ p q: Proc,
+        (p ∉ C ∧ q ∈ C) → q ∈ (tr (k + i)).s.suspected[p]! := by
+  -- show that all processes in `C` eventually crash
+  have h_p_in_C_crashes:
+      ∀ p ∈ C, eventually_crashes tr p := by
+    intro p h_p_in_C
+    unfold is_crashing_set at h_is_crashing_set
+    specialize h_is_crashing_set p
+    simp [h_p_in_C] at h_is_crashing_set
+    exact h_is_crashing_set
+  -- apply the lemma `eventually_crashing_meet` to find a point `k`
+  -- such that all processes in `C` crash at `k` and later
+  have h_crashing_meet := eventually_crashing_meet InitDelay GST MsgDelay
+    tr h_is_fair_run C h_p_in_C_crashes
+  rcases h_crashing_meet with ⟨ k, h_crashing_at_k ⟩
+  use k -- FIXME: this is not the point that we need!
+  intro i p q ⟨h_p_notin_C, h_q_in_C⟩
+  have h_p_never_crashes: never_crashes tr p := by
+    -- `p` is not in `C`, so it never crashes
+    unfold is_crashing_set at h_is_crashing_set
+    specialize h_is_crashing_set p
+    simp [h_p_notin_C] at h_is_crashing_set
+    unfold eventually_crashes at h_is_crashing_set
+    unfold never_crashes
+    simp at h_is_crashing_set
+    exact h_is_crashing_set
+  have h_q_in_C_crashes: eventually_crashes tr q := by
+    -- `q` is in `C`, so it eventually crashes
+    unfold is_crashing_set at h_is_crashing_set
+    specialize h_is_crashing_set q
+    simp [h_q_in_C] at h_is_crashing_set
+    exact h_is_crashing_set
+  have h :=
+    eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
+      tr h_is_fair_run p q h_p_never_crashes h_q_in_C_crashes
+  unfold eventually_q_is_always_suspected at h
+  rcases h with ⟨ j, h_suspected_always ⟩
+  specialize h_suspected_always i
+  -- FIXME: k is the meet point of crashes,
+  -- but we need the meet point of suspects
+  let point := max k j
+  have h_k_ge_j: k ≥ j := by omega
+  exact h_suspected_always
 
 /-
 /-- Strong completeness hold for every run. -/

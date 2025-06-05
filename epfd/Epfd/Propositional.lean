@@ -175,15 +175,16 @@ section properties
   suspected by every correct process." We want to prove that every *fair run*
   (see below) of the protocol satisfies this property.
 
-  In temporal logic, it would be
-  `<>[](∀ p q: Proc, p ∉ crashed ∧ q ∈ crashed → q ∈ suspected[p]!)`.
+  In temporal logic, it would be `<>[](∀ p q: Proc, p ∉ C ∧ q ∈ C → q ∈
+  suspected[p]!)` for the set `C` that contains exactly the processes `p` such
+  that `<>(p ∈ crashed)`. Even though it is easy to define such a set `C`, it
+  happens to be hard to convince Lean that `C` exists in every fair run of the
+  protocol. Hence, we work around this problem by supplying the set `C`.
   -/
-def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  ∃ i: ℕ,
-    let s_i := seq i
-    ∀ k: ℕ, ∀ p q: Proc,
-      let s_k := seq k
-      (k ≥ i ∧ p ∉ s_i.crashed ∧ q ∈ s_i.crashed) → q ∈ s_k.suspected[p]!
+def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) (C: Finset Proc): Prop :=
+  (∀ p: Proc, p ∈ C ↔ ∃ i: ℕ, p ∈ (seq i).crashed)
+    → ∃ i: ℕ, ∀ k: ℕ, ∀ p q: Proc,
+        (k ≥ i ∧ p ∉ C ∧ q ∈ C) → q ∈ (seq k).suspected[p]!
 
 /--
   Does a sequence of states satisfy *eventual strong accuracy*? This is how it
