@@ -318,8 +318,7 @@ lemma no_sent_from_the_future
       have h_keep_sent: s'.sent = s.sent := by simp [h_next]
       have h_keep_clock: s'.clock = s.clock := by simp [h_next]
       rw [h_keep_sent] at h_m_in_sent; rw [h_keep_clock]
-      simp [h_m_in_sent]
-      at h_s; exact h_s
+      exact h_s h_m_in_sent
 
     | Timeout p =>
       -- `s'.sent = s.sent ∪ newSent`. Show that `m ∈ newSent` satisfy `P`.
@@ -907,53 +906,57 @@ lemma eventually_always_suspected_meet
   -- bubble up `∃ k: ℕ` the second time
   exact forall_FG_implies_FG_forall P Crashed bubble1
 
-/-- Strong completeness hold for every run. -/
-theorem strong_completeness (tr: Trace Proc)
+/--
+  Strong completeness holds for every run.
+  -/
+theorem strong_completeness
+    (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (C: Finset Proc) (h_is_crashing_set: is_crashing_set tr C):
+    (Crashed: Finset Proc) (h_is_crashing_set: is_crashing_set tr Crashed):
       ∃ k: ℕ, ∀ i: ℕ, ∀ p q: Proc,
-        (p ∉ C ∧ q ∈ C) → q ∈ (tr (k + i)).s.suspected[p]! := by
-  -- show that all processes in `C` eventually crash
-  have h_p_in_C_crashes:
-      ∀ p ∈ C, eventually_crashes tr p := by
-    intro p h_p_in_C
-    unfold is_crashing_set at h_is_crashing_set
-    specialize h_is_crashing_set p
-    simp [h_p_in_C] at h_is_crashing_set
-    exact h_is_crashing_set
-  -- apply the lemma `eventually_crashing_meet` to find a point `k`
-  -- such that all processes in `C` crash at `k` and later
-  have h_crashing_meet := eventually_crashing_meet InitDelay GST MsgDelay
-    tr h_is_fair_run C h_p_in_C_crashes
-  rcases h_crashing_meet with ⟨ k, h_crashing_at_k ⟩
-  use k -- FIXME: this is not the point that we need!
-  intro i p q ⟨h_p_notin_C, h_q_in_C⟩
-  have h_p_never_crashes: never_crashes tr p := by
-    -- `p` is not in `C`, so it never crashes
-    unfold is_crashing_set at h_is_crashing_set
-    specialize h_is_crashing_set p
-    simp [h_p_notin_C] at h_is_crashing_set
-    unfold eventually_crashes at h_is_crashing_set
+        (p ∉ Crashed ∧ q ∈ Crashed) → q ∈ (tr (k + i)).s.suspected[p]! := by
+  -- define the set of the correct processes
+  let Correct := Finset.univ \ Crashed
+  -- show that all processes in `Correct` never crash
+  have h_correct_never_crash:
+      ∀ p ∈ Correct, never_crashes tr p := by
+    intro p h_p_in_Correct
     unfold never_crashes
-    simp at h_is_crashing_set
-    exact h_is_crashing_set
-  have h_q_in_C_crashes: eventually_crashes tr q := by
-    -- `q` is in `C`, so it eventually crashes
+    unfold is_crashing_set eventually_crashes at h_is_crashing_set
+    have h_p := h_is_crashing_set p
+    have h_p_not_in_Crashed: p ∉ Crashed := by
+      simp [Correct] at h_p_in_Correct; exact h_p_in_Correct
+    simp [h_p_not_in_Crashed] at h_p
+    exact h_p
+  -- show that all processes in `Crashed` eventually crash
+  have h_all_in_Crashed_crash:
+      ∀ q ∈ Crashed, eventually_crashes tr q := by
+    intro q h_q_in_Crashed
     unfold is_crashing_set at h_is_crashing_set
     specialize h_is_crashing_set q
-    simp [h_q_in_C] at h_is_crashing_set
+    simp [h_q_in_Crashed] at h_is_crashing_set
     exact h_is_crashing_set
-  have h :=
-    eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
-      tr h_is_fair_run p q h_p_never_crashes h_q_in_C_crashes
-  unfold eventually_q_is_always_suspected at h
-  rcases h with ⟨ j, h_suspected_always ⟩
-  specialize h_suspected_always i
-  -- FIXME: k is the meet point of crashes,
-  -- but we need the meet point of suspects
-  let point := max k j
-  have h_k_ge_j: k ≥ j := by omega
-  exact h_suspected_always
+  -- show that for every pair of a crashed process `q` and a correct process `p`,
+  -- there is a point when `p` permanently suspects `q`
+  have h_suspected:
+      ∀ q ∈ Crashed,
+        ∀ p ∈ Correct,
+          eventually_q_is_always_suspected tr p q := by
+    intro q q_in_Crashed
+    intro p p_in_Correct
+    have h_q_crashes := h_all_in_Crashed_crash q q_in_Crashed
+    have h_p_never_crashes := h_correct_never_crash p p_in_Correct
+    apply eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
+      tr h_is_fair_run p q h_p_never_crashes h_q_crashes
+  -- apply the lemma `eventually_always_suspected_meet` to find a point `k`
+  have h_suspected_meet :=
+    eventually_always_suspected_meet tr Crashed h_suspected
+  -- we are almost there, just transform `h_suspected_meet` a bit
+  rcases h_suspected_meet with ⟨k, h_q_suspected_by_p⟩
+  use k
+  intro i p q ⟨p_not_crashed, q_is_crashed⟩
+  have p_is_correct: p ∈ Correct := by unfold Correct; simp [p_not_crashed]
+  exact h_q_suspected_by_p i q q_is_crashed p p_is_correct
 
 /-
 /-- Strong completeness hold for every run. -/
