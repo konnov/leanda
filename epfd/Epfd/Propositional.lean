@@ -158,13 +158,13 @@ def init (all: List Proc): Prop :=
   The transition relation of the protocol.
   -/
 def next: Prop :=
-  advance_clock Proc s s'
-    ∨ ∃ p q: Proc,
+    advance_clock Proc s s'
+  ∨ ∃ p q: Proc,
         timeout Proc InitDelay s s' p
-          ∨ crash Proc s s' p
-          ∨ ∃ t: ℕ,
-              rcv_heartbeat_request Proc GST MsgDelay s s' p q t
-                ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
+      ∨ crash Proc s s' p
+      ∨ ∃ t: ℕ,
+            rcv_heartbeat_request Proc GST MsgDelay s s' p q t
+          ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
 
 -- The protocol properties to prove. Here we define the properties
 -- as close to the original formulation as possible.
@@ -181,10 +181,14 @@ section properties
   happens to be hard to convince Lean that `C` exists in every fair run of the
   protocol. Hence, we work around this problem by supplying the set `C`.
   -/
-def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) (C: Finset Proc): Prop :=
-  (∀ p: Proc, p ∈ C ↔ ∃ i: ℕ, p ∈ (seq i).crashed)
-    → ∃ i: ℕ, ∀ k: ℕ, ∀ p q: Proc,
-        (k ≥ i ∧ p ∉ C ∧ q ∈ C) → q ∈ (seq k).suspected[p]!
+def is_strongly_complete
+    (Crashed: Finset Proc)
+    (seq: ℕ → ProtocolState Proc): Prop :=
+  (∀ p: Proc, p ∈ Crashed ↔ ∃ i: ℕ, p ∈ (seq i).crashed)
+    → ∃ k: ℕ,
+        ∀ i: ℕ,
+          ∀ p q: Proc,
+            p ∉ Crashed ∧ q ∈ Crashed → q ∈ (seq (k + i)).suspected[p]!
 
 /--
   Does a sequence of states satisfy *eventual strong accuracy*? This is how it
@@ -196,11 +200,12 @@ def is_strongly_complete (seq: ℕ → (ProtocolState Proc)) (C: Finset Proc): P
   `<>[](∀ p q: Proc, p ∉ crashed ∧ q ∉ crashed → q ∉ suspected[p]!)`.
   -/
 def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  ∃ i: ℕ,
-    ∀ k: ℕ, ∀ p q: Proc,
-      let s_i := seq i
-      let s_k := seq k
-      (k ≥ i ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed) → q ∉ s_k.suspected[p]!
+  ∃ k: ℕ,
+    ∀ i: ℕ,
+      ∀ p q: Proc,
+        let s_i := seq k
+        let s_k := seq i
+        (i ≥ k ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed) → q ∉ s_k.suspected[p]!
 
 end properties
 
@@ -254,6 +259,12 @@ structure StateAction where
   See `is_path` and `is_run` for stronger conditions.
   -/
 abbrev Trace := ℕ → StateAction Proc
+
+/--
+  Interpret a trace as a sequence of protocol states.
+  -/
+def states_of_trace (tr: Trace Proc) :=
+  fun i: ℕ => (tr i).s
 
 /--
   Does a trace satisfy the reliable communication property:

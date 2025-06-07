@@ -850,12 +850,13 @@ lemma eventually_always_suspected_meet
   exact forall_FG_implies_FG_forall P Crashed bubble1
 
 /--
-  Strong completeness holds for every run.
+  Strong completeness holds for every fair run.
   -/
 theorem strong_completeness
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (Crashed: Finset Proc) (h_is_crashing_set: is_crashing_set tr Crashed):
+    (Crashed: Finset Proc)
+    (h_is_crashing_set: is_crashing_set tr Crashed):
       ∃ k: ℕ, ∀ i: ℕ, ∀ p q: Proc,
         (p ∉ Crashed ∧ q ∈ Crashed) → q ∈ (tr (k + i)).s.suspected[p]! := by
   -- define the set of the correct processes
@@ -900,6 +901,20 @@ theorem strong_completeness
   intro i p q ⟨p_not_crashed, q_is_crashed⟩
   have p_is_correct: p ∈ Correct := by unfold Correct; simp [p_not_crashed]
   exact h_q_suspected_by_p i q q_is_crashed p p_is_correct
+
+/--
+  Show that the property `is_strongly_complete` holds on fair runs.
+  -/
+theorem strong_completeness_on_states
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (Crashed: Finset Proc):
+      is_strongly_complete Proc Crashed (states_of_trace Proc tr) := by
+  unfold is_strongly_complete states_of_trace
+  intro h_crashed
+  have h_is_crashing_set: is_crashing_set tr Crashed := by exact h_crashed
+  exact strong_completeness InitDelay GST MsgDelay
+    tr h_is_fair_run Crashed h_is_crashing_set
 
 /-
 /-- Strong completeness hold for every run. -/
