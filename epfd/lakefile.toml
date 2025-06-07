@@ -8,7 +8,3 @@ name = "Epfd"
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
-
-[[lean_exe]]
-name = "epfd"
-root = "Main"
