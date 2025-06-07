@@ -1,5 +1,5 @@
 /-
-Proving the properties of eventually perfect failure detector.
+Proving the properties of the eventually perfect failure detector.
 
 Copyright (c) 2025 Igor Konnov
 Released under MIT license as described in the file LICENSE.
@@ -57,8 +57,16 @@ def eventually_q_is_always_suspected (tr: Trace Proc) (p q: Proc): Prop :=
     q_is_always_suspected tr p q i
 
 /--
+  A set of processes `C` is a crashing set if every process in `C`
+  eventually crashes, and every process not in `C` never crashes.
+ -/
+def is_crashing_set (tr: Trace Proc) (C: Finset Proc): Prop :=
+  ∀ p: Proc, p ∈ C ↔ eventually_crashes tr p
+
+/--
   An inductive proof schema to show that a state property `P` holds for all states
   in a fair run. We use this lemma to avoid repetitive proofs by induction.
+  Surprisingly, we needed this lemma only once so far.
   -/
 lemma inductive_inv
     {P: ProtocolState Proc → Prop}
@@ -89,7 +97,10 @@ lemma inductive_inv
     simp [ih, h_is_path] at h_step_P
     exact h_step_P
 
-/-- A single step does not decrease the clock value.  -/
+/--
+  A single step does not decrease the clock value. In temporal logic,
+  `[](clock' ≥ clock)`.
+  -/
 lemma clock_is_monotonic_in_one_step
     (s: ProtocolState Proc) (s': ProtocolState Proc) (a: Action Proc)
     (h_next: next_a Proc InitDelay GST MsgDelay s s' a):
@@ -101,7 +112,10 @@ lemma clock_is_monotonic_in_one_step
   | AdvanceClock | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
     simp [h_next]
 
-/-- A single step does not decrease the set of the crashed processes.  -/
+/--
+  A single step does not decrease the set of the crashed processes.
+  In temporal logic, `[](crashed' ⊇ crashed)`.
+  -/
 lemma crashed_is_monotonic_in_one_step
     (s: ProtocolState Proc) (s': ProtocolState Proc) (a: Action Proc)
     (h_next: next_a Proc InitDelay GST MsgDelay s s' a):
@@ -114,7 +128,10 @@ lemma crashed_is_monotonic_in_one_step
   | AdvanceClock | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
     simp [h_next]
 
-/-- The clock grows monotonically in a fair run. -/
+/--
+  The clock grows monotonically in a fair run.
+  In temporal logic, `∃ c: ℕ, [](clock = c → [](clock ≥ c))`.
+  -/
 lemma clock_is_monotonic_in_fair_run
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
@@ -148,22 +165,22 @@ lemma clock_is_monotonic_in_fair_run
 lemma crashed_is_monotonic_in_fair_run
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (p: Proc) (i: ℕ) (h_p_crashed: p ∈ (tr i).s.crashed) (k: ℕ):
-      p ∈ (tr (i + k)).s.crashed := by
-  induction k with
+    (p: Proc) (k: ℕ) (h_p_crashed: p ∈ (tr k).s.crashed) (i: ℕ):
+      p ∈ (tr (k + i)).s.crashed := by
+  induction i with
   | zero => exact h_p_crashed
-  | succ k ik =>
+  | succ i ii =>
     unfold is_fair_run at h_is_fair_run
     rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
     unfold is_run at h_is_run
     rcases h_is_run with ⟨ _, h_is_path ⟩
     unfold is_path at h_is_path
-    specialize h_is_path (i + k)
+    specialize h_is_path (k + i)
     -- apply crashed_is_monotonic_in_one_step to the last step
     have h_last_step_mono :=
       crashed_is_monotonic_in_one_step InitDelay GST MsgDelay
-        (tr (i + k)).s (tr (i + k + 1)).s (tr (i + k + 1)).a h_is_path
-    exact h_last_step_mono ik
+        (tr (k + i)).s (tr (k + i + 1)).s (tr (k + i + 1)).a h_is_path
+    exact h_last_step_mono ii
 
 /--
   Every fair run covers every clock value `t`. Note that this requires fairness.
@@ -197,9 +214,10 @@ lemma eventually_clock_is_t
     specialize h_is_path (j - 1)
     unfold next_a at h_is_path
 
-    have h_jj: j - 1 + 1 = j := by omega -- JJ!
+    have h_jj: j - 1 + 1 = j := by omega -- do trivial reindexing
     rw [h_jj] at h_is_path -- replace `j - 1 + 1` with `j`
-    have h_clock_advances_at_j: (tr j).a = Action.AdvanceClock := by simp [h_j_clock_advances]
+    have h_clock_advances_at_j: (tr j).a = Action.AdvanceClock := by
+      simp [h_j_clock_advances]
     simp [h_clock_advances_at_j, advance_clock] at h_is_path
     have h_mono_clock: (tr i).s.clock ≤ (tr (j - 1)).s.clock := by
       have h_j_gt_i: j > i := by simp [h_j_clock_advances]
@@ -220,38 +238,42 @@ lemma eventually_alive_is_empty
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (p: Proc)
-    (h_p_never_crashes: never_crashes tr p) (i: ℕ)
-    (h_i_positive: i > 0):
-      ∃ k: ℕ, (tr (i + k)).s.alive[p]! = ∅ := by
+    (h_p_never_crashes: never_crashes tr p) (k: ℕ)
+    (h_i_positive: k > 0):
+      ∃ i: ℕ, (tr (k + i)).s.alive[p]! = ∅ := by
   rcases h_is_fair_run with
     ⟨ h_is_run, h_is_rel_comm, h_is_fair_to, h_is_fair_clock ⟩
   unfold is_fair_timeout at h_is_fair_to
-  specialize h_is_fair_to i p
+  specialize h_is_fair_to k p
   rcases h_is_fair_to with ⟨ j, h_j_clock_ge ⟩
   -- this is the point when `p` triggers next timeout
-  specialize h_p_never_crashes (i + j - 1)
+  specialize h_p_never_crashes (k + j - 1)
   simp [h_p_never_crashes] at h_j_clock_ge
   rcases h_j_clock_ge with ⟨ h_timeout, h_clock_at_timeout ⟩
   unfold is_run at h_is_run
   rcases h_is_run with ⟨ _, h_is_path ⟩
   unfold is_path at h_is_path
-  specialize h_is_path (i + j - 1)
-  have h_dec_inc: i + j - 1 + 1 = i + j := by omega
+  specialize h_is_path (k + j - 1)
+  have h_dec_inc: k + j - 1 + 1 = k + j := by omega
   rw [h_dec_inc, h_timeout] at h_is_path
   unfold next_a at h_is_path
   simp at h_is_path
   unfold timeout at h_is_path
   -- extract the update of the set `alive[p]!`
   rcases h_is_path with ⟨ _, _, _, _, _, h_alive_updated, _ ⟩
-  have h_alive_is_empty: (tr (i + j)).s.alive[p]! = ∅ := by
+  have h_alive_is_empty: (tr (k + j)).s.alive[p]! = ∅ := by
     simp [h_alive_updated]
   exact ⟨ j, h_alive_is_empty ⟩
 
-/-- An auxilliary lemma to get rid of the annoying case of `i = 0`. -/
+/--
+  An auxilliary lemma to get rid of the annoying case of `i = 0`.
+  In temporal logic, `¬(clock > 0)`.
+  -/
 lemma when_clock_is_positive_step_is_non_init
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (i: ℕ) (h_clock_is_positive: (tr i).s.clock > 0):
+    (i: ℕ)
+    (h_clock_is_positive: (tr i).s.clock > 0):
       i > 0 := by
   unfold is_fair_run at h_is_fair_run
   rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
@@ -791,85 +813,6 @@ lemma eventually_crashes_implies_always_suspected
   use k + 1 + j
 
 /--
-  A set of processes `C` is a crashing set if every process in `C`
-  eventually crashes, and every process not in `C` never crashes.
- -/
-def is_crashing_set (tr: Trace Proc) (C: Finset Proc): Prop :=
-  ∀ p: Proc, p ∈ C ↔ eventually_crashes tr p
-
-/--
-  For a set of crashing processes `C`, there is a point `k` such that all
-  processes in `C` are crashing from `k` onwards. In other word, there is a
-  joint point in the future where all processes in `C` are crashing. This
-  "obvious" property happened to be not so easy to prove. It requires
-  well-founded induction.
-
-  In temporal logic,
-  `(∀ p ∈ C, <>(p ∈ crashed)) → <>(∀ p ∈ C, p ∈ crashed)`.
- -/
-lemma eventually_crashing_meet (tr: Trace Proc)
-    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-      (C: Finset Proc) (h_crashing: ∀ p ∈ C, eventually_crashes tr p):
-        ∃ k: ℕ, ∀ p ∈ C,
-          ∀ i: ℕ, p ∈ (tr (k + i)).s.crashed := by
-  -- the statement that we want to prove
-  let P := fun (C: Finset Proc) =>
-    (∀ p ∈ C, eventually_crashes tr p)
-      → ∃ k: ℕ, ∀ p ∈ C,
-          ∀ i: ℕ, p ∈ (tr (k + i)).s.crashed
-  have base: P ∅ := by
-    -- when `C = ∅`, our statement is trivially true
-    unfold P; simp
-  have step: ∀ p C, p ∉ C → P C → P (insert p C) := by
-    intro p C h_a_not_in_C h_P
-    -- we have to show that `P (insert a C)` holds
-    unfold P at h_P
-    intro h_all_crash
-    have h_C_crash: ∀ q ∈ C, eventually_crashes tr q := by
-      intro p h_q_in_C
-      exact h_all_crash p (Finset.mem_insert_of_mem h_q_in_C)
-    have h_eventually_p_crashes: eventually_crashes tr p := by
-      -- `a` is in `insert a C`, so we can apply `h_all_crash`
-      exact h_all_crash p (Finset.mem_insert_self p C)
-    -- apply `h_P` to get the result for `C`
-    rcases h_P h_C_crash with ⟨ at_C_crashed, h_C_crashed ⟩
-    unfold eventually_crashes at h_eventually_p_crashes
-    rcases h_eventually_p_crashes with ⟨ at_p_crashed, h_p_crashed ⟩
-    let k := max at_C_crashed at_p_crashed
-    -- now we have to show that `∀ q ∈ insert a C, ∀ i: ℕ, q ∈ (tr (k + i)).s.crashed`
-    use k
-    intro q h_q_in_insert
-    by_cases h_q_eq_p: q = p
-    case pos =>
-      -- `q = p`, so we can use monotonicity of `p` crashing,
-      intro i -- relative to `k`, adjust the index to start from `at_p_crashed`
-      rw [h_q_eq_p]
-      let j := k + i - at_p_crashed
-      have h_j: at_p_crashed + j = k + i := by omega
-      have h_p_crashed_later :=
-        crashed_is_monotonic_in_fair_run InitDelay GST MsgDelay
-          tr h_is_fair_run p at_p_crashed h_p_crashed j
-      rw [h_j] at h_p_crashed_later
-      exact h_p_crashed_later
-    case neg =>
-      -- `q ≠ p`, so we can use the result for `C`
-      intro i -- relative to `k`
-      have h_q_in_C: q ∈ C := by
-        rw [Finset.mem_insert] at h_q_in_insert
-        simp [h_q_eq_p] at h_q_in_insert
-        exact h_q_in_insert
-      -- adjust the index to start from `at_C_crashed`
-      let j := k + i - at_C_crashed
-      have h_q_crashed_later := h_C_crashed q h_q_in_C j
-      have h_j: at_C_crashed + j = k + i := by omega
-      rw [h_j] at h_q_crashed_later
-      exact h_q_crashed_later
-  have : ∀ C: Finset Proc, P C :=
-    Finset.induction base step
-  exact this C h_crashing
-
-/--
-
   For a set of crashing processes `C` and a trace `tr`, show that if for every
   crashing process `q` and every correct process `p`, it holds that `p`
   eventually suspects `q` forever, then there is a common time point `k` such
