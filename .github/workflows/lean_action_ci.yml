@@ -19,3 +19,12 @@ jobs:
         run: |
           cd twophase
           lake exec RunTwophase4 100000 50 consistentInv $(date +%s)
+
+  build-epfd:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: "./epfd"
