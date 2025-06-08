@@ -197,13 +197,14 @@ def is_strongly_complete
   In temporal logic, it would be
   `<>[](∀ p q: Proc, p ∉ crashed ∧ q ∉ crashed → q ∉ suspected[p]!)`.
   -/
-def is_eventually_strongly_accurate (seq: ℕ → (ProtocolState Proc)) : Prop :=
-  ∃ k: ℕ,
-    ∀ i: ℕ,
-      ∀ p q: Proc,
-        let s_i := seq k
-        let s_k := seq i
-        (i ≥ k ∧ p ∉ s_i.crashed ∧ q ∉ s_i.crashed) → q ∉ s_k.suspected[p]!
+def is_eventually_strongly_accurate
+    (Crashed: Finset Proc)
+    (seq: ℕ → (ProtocolState Proc)) : Prop :=
+  (∀ p: Proc, p ∈ Crashed ↔ ∃ i: ℕ, p ∈ (seq i).crashed)
+    → ∃ k: ℕ,
+        ∀ i: ℕ,
+          ∀ p q: Proc,
+            p ∉ Crashed ∧ q ∉ Crashed → q ∉ (seq (i + k)).suspected[p]!
 
 end properties
 
