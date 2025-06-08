@@ -35,7 +35,6 @@ structure Msg where
   deriving DecidableEq, Repr
 
 /-- A global state of the eventually perfect failure detector:
-  - `all` is the set of all processes in the system.
   - `alive` is a map from each process to the set of processes that it
     considers alive.
   - `suspected` is a map from each process to the set of processes that it
@@ -51,7 +50,6 @@ structure Msg where
 structure ProtocolState where
   -- The set of all processes.
   -- It may differ from run to run, but remains constant during a run.
-  all: Finset Proc
   crashed: Finset Proc
   sent: Finset (Msg Proc)
   rcvd: Finset (Msg Proc)

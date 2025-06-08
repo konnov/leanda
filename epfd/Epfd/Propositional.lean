@@ -7,8 +7,7 @@ Springer-Heidelberg 2011. This algorithm assumes partial synchrony.
 
 The original eventually perfect failure detector is defined in the paper
 "Unreliable Failure Detectors for Reliable Distributed Systems" by Tushar Deepak
-Chandra and Sam Toueg, JACM 1996. The original paper assumes reliable
-communication.
+Chandra and Sam Toueg, JACM 1996. See Figure 10.
 
 Copyright (c) 2025 Igor Konnov
 Released under MIT license as described in the file LICENSE.
@@ -138,14 +137,13 @@ def advance_clock :=
   Initialize a map with the default value `v` for each process in `all`.
   -/
 noncomputable def init_map {α: Type} (v: α) : Std.HashMap Proc α :=
-    Finset.univ.toList.foldl (fun m p => m.insert p v) (Std.HashMap.emptyWithCapacity 0)
+  Finset.univ.toList.foldl (fun m p => m.insert p v) (Std.HashMap.emptyWithCapacity 0)
 
 /--
   The initial state of the protocol.
   -/
-def init (all: List Proc): Prop :=
-    s.all = all.toFinset
-  ∧ s.crashed = ∅
+def init: Prop :=
+    s.crashed = ∅
   ∧ s.sent = ∅
   ∧ s.rcvd = ∅
   ∧ s.clock = 0
@@ -319,7 +317,7 @@ def is_path (tr: Trace Proc) : Prop :=
   -/
 def is_run (tr: Trace Proc) : Prop :=
   let s0 := (tr 0).s
-  init Proc InitDelay s0 s0.all.toList
+  init Proc InitDelay s0
     ∧ is_path Proc InitDelay GST MsgDelay tr
 
 /--

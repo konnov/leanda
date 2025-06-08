@@ -72,7 +72,7 @@ lemma inductive_inv
     {P: ProtocolState Proc → Prop}
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
-    (h_init_P: (s: ProtocolState Proc) → (h_init: init Proc InitDelay s s.all.toList) → P s)
+    (h_init_P: (s: ProtocolState Proc) → (h_init: init Proc InitDelay s) → P s)
     (h_step_P:
       (s: ProtocolState Proc) → (s': ProtocolState Proc) → (a: Action Proc)
         → (h_s: P s) → (h_next: (next_a Proc InitDelay GST MsgDelay s s' a)) → P s'):
@@ -302,12 +302,11 @@ lemma no_sent_from_the_future
   let P := fun (s: ProtocolState Proc) => ∀ m ∈ s.sent, m.timestamp ≤ s.clock
   -- show P for the initial state
   have h_init_P: (s: ProtocolState Proc)
-      → (h_init: init Proc InitDelay s s.all.toList) → (P s) := by
+      → (h_init: init Proc InitDelay s) → (P s) := by
     intros s h_init
     unfold init at h_init; unfold P
-    rcases h_init with ⟨ _, _, h_sent_empty, _, h_clock_zero, _ ⟩
-    -- sent is empty, trivial
-    simp [h_sent_empty]
+    have : s.sent = ∅ := by simp only [h_init]
+    simp [this]
   -- show P for a single step
   have h_step_P:
       (s: ProtocolState Proc) → (s': ProtocolState Proc) → (a: Action Proc)
