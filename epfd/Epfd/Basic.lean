@@ -34,30 +34,29 @@ structure Msg where
   timestamp: ℕ
   deriving DecidableEq, Repr
 
-/-- A global state of the eventually perfect failure detector:
+/--
+  A global state of the eventually perfect failure detector:
   - `alive` is a map from each process to the set of processes that it
     considers alive.
   - `suspected` is a map from each process to the set of processes that it
     considers suspected.
   - `delay` is a map from each process to its delay (in clock units).
+  - `nextTimeout` maps each process to the point of the next timeout.
   - `sent` is the set of messages that have been sent by the processes.
   - `rcvd` is the set of messages that have been received by the processes.
   - `clock` is a global clock value.
   - `crashed` is the set of processes that have actually crashed.
-  - `nextTimeout` maps each process to the point of the next timeout.
 -/
 @[ext] -- this is needed for proofs
 structure ProtocolState where
-  -- The set of all processes.
-  -- It may differ from run to run, but remains constant during a run.
-  crashed: Finset Proc
-  sent: Finset (Msg Proc)
-  rcvd: Finset (Msg Proc)
-  clock: Nat
   alive: Std.HashMap Proc (Finset Proc)
   suspected: Std.HashMap Proc (Finset Proc)
   delay: Std.HashMap Proc Nat
   nextTimeout: Std.HashMap Proc Nat
+  sent: Finset (Msg Proc)
+  rcvd: Finset (Msg Proc)
+  clock: Nat
+  crashed: Finset Proc
 
 /--
   Given a message that was sent at `timestamp`, can a process receive it at time `clock`.
