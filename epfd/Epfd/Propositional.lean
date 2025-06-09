@@ -157,10 +157,10 @@ def init: Prop :=
   -/
 def next: Prop :=
     advance_clock Proc s s'
-  ∨ ∃ p q: Proc,
+  ∨ ∃ p: Proc,
         timeout Proc InitDelay s s' p
       ∨ crash Proc s s' p
-      ∨ ∃ t: ℕ,
+      ∨ ∃ q: Proc, ∃ t: ℕ,
             rcv_heartbeat_request Proc GST MsgDelay s s' p q t
           ∨ rcv_heartbeat_reply Proc GST MsgDelay s s' p q t
 

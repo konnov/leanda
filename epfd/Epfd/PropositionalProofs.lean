@@ -922,3 +922,54 @@ theorem eventual_strong_accuracy (tr: Trace Proc)
       (is_eventually_strongly_accurate tr) := by
   sorry
 -/
+
+/--
+  Show equivalence of `s' = s ∨ next` and `next_a`. This is a technical theorem,
+  just to convince ourselves that we are not missing cases.
+  -/
+theorem next_a_iff_next
+    (s: ProtocolState Proc)
+    (s': ProtocolState Proc):
+      s' = s ∨ next Proc InitDelay GST MsgDelay s s'
+        ↔ ∃ a: Action Proc, next_a Proc InitDelay GST MsgDelay s s' a := by
+  unfold next next_a
+  apply Iff.intro
+  . intro h_next
+    cases h_next
+    case inl h_stutter =>
+      use Action.Init
+    case inr h =>
+      cases h
+      case inl h_advance_clock =>
+        use Action.AdvanceClock
+
+      case inr h =>
+        rcases h with ⟨p, h⟩
+        cases h
+        case inl h_timeout =>
+          use Action.Timeout p
+
+        case inr h =>
+          cases h
+          case inl h_crash =>
+            use Action.Crash p
+
+          case inr h =>
+            rcases h with ⟨q, t, h⟩
+            cases h
+            case inl h_rcv_heartbeat_req => use Action.RcvHeartbeatRequest p q t
+            case inr h_rcv_heartbeat_reply => use Action.RcvHeartbeatReply p q t
+
+  . intro h_next_a
+    rcases h_next_a with ⟨a, h_next_a⟩
+    match a with
+    | Action.Init | Action.AdvanceClock =>
+      simp [h_next_a]
+    | Action.Timeout p | Action.Crash p =>
+      simp at h_next_a
+      repeat apply Or.inr
+      use p; simp [h_next_a]
+    | Action.RcvHeartbeatRequest p q t | Action.RcvHeartbeatReply p q t =>
+      repeat apply Or.inr
+      use p; repeat apply Or.inr
+      use q; use t; simp [h_next_a]
