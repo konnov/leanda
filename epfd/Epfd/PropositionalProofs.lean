@@ -29,7 +29,7 @@ def never_crashes (tr: Trace Proc) (p: Proc): Prop :=
   ∀ i: ℕ,
     p ∉ (tr i).s.crashed
 
-/-- A process `p` never crashes, i.e., `[](p ∈ crashed)`.  -/
+/-- A process `p` eventually crashes, i.e., `<>(p ∈ crashed)`.  -/
 def eventually_crashes (tr: Trace Proc) (p: Proc): Prop :=
   ∃ i: ℕ,
     p ∈ (tr i).s.crashed
@@ -38,23 +38,23 @@ def eventually_crashes (tr: Trace Proc) (p: Proc): Prop :=
   Eventually, `p` never registers `q` as alive, i.e., `<>[](q ∉ alive[p])`.
   -/
 def eventually_never_alive (tr: Trace Proc) (p q: Proc): Prop :=
-  ∃ i: ℕ, ∀ k: ℕ,
-    q ∉ (tr (i + k)).s.alive[p]!
+  ∃ k: ℕ, ∀ i: ℕ,
+    q ∉ (tr (k + i)).s.alive[p]!
 
 /--
   `p` suspects `q` permanently from some point `k`, i.e.,
   `tr[k,...] ⊧ [](q ∈ suspected[p])`.
   -/
-def q_is_always_suspected (tr: Trace Proc) (p q: Proc) (i: ℕ): Prop :=
-  ∀ k: ℕ,
-    q ∈ (tr (i + k)).s.suspected[p]!
+def q_is_always_suspected (tr: Trace Proc) (p q: Proc) (k: ℕ): Prop :=
+  ∀ i: ℕ,
+    q ∈ (tr (k + i)).s.suspected[p]!
 
 /--
   Eventually, `p` suspects `q` permanently, i.e., `<>[](q ∈ suspected[p])`.
   -/
 def eventually_q_is_always_suspected (tr: Trace Proc) (p q: Proc): Prop :=
-  ∃ i: ℕ,
-    q_is_always_suspected tr p q i
+  ∃ k: ℕ,
+    q_is_always_suspected tr p q k
 
 /--
   A set of processes `C` is a crashing set if every process in `C`
@@ -105,11 +105,12 @@ lemma clock_is_monotonic_in_one_step
     (s: ProtocolState Proc) (s': ProtocolState Proc) (a: Action Proc)
     (h_next: next_a Proc InitDelay GST MsgDelay s s' a):
       s'.clock ≥ s.clock := by
-  unfold next_a at h_next
-  unfold crash rcv_heartbeat_reply advance_clock rcv_heartbeat_request timeout at h_next
+  unfold next_a crash rcv_heartbeat_reply advance_clock
+         rcv_heartbeat_request timeout at h_next
   cases a with
   | Init => simp at h_next; rw [h_next]
-  | AdvanceClock | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
+  | AdvanceClock | RcvHeartbeatRequest _ _ _
+  | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
     simp [h_next]
 
 /--
@@ -121,11 +122,12 @@ lemma crashed_is_monotonic_in_one_step
     (h_next: next_a Proc InitDelay GST MsgDelay s s' a):
       s'.crashed ⊇ s.crashed := by
   -- literally the same proof as above
-  unfold next_a at h_next
-  unfold crash rcv_heartbeat_reply advance_clock rcv_heartbeat_request timeout at h_next
+  unfold next_a crash rcv_heartbeat_reply
+         advance_clock rcv_heartbeat_request timeout at h_next
   cases a with
   | Init => simp at h_next; rw [h_next]
-  | AdvanceClock | RcvHeartbeatRequest _ _ _ | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
+  | AdvanceClock | RcvHeartbeatRequest _ _ _
+  | RcvHeartbeatReply _ _ _ | Timeout _ | Crash _ =>
     simp [h_next]
 
 /--
@@ -150,7 +152,7 @@ lemma clock_is_monotonic_in_fair_run
     rcases h_is_run with ⟨ _, h_is_path ⟩
     unfold is_path at h_is_path
     specialize h_is_path (i + k)
-    -- apply next_does_not_decrease_clock to the last step
+    -- apply clock_is_monotonic_in_one_step to the last step
     have h_last_step_mono :=
       clock_is_monotonic_in_one_step InitDelay GST MsgDelay
         (tr (i + k)).s (tr (i + k + 1)).s (tr (i + k + 1)).a h_is_path
@@ -160,7 +162,7 @@ lemma clock_is_monotonic_in_fair_run
 /--
   The set `crashed` grows monotonically in a fair run.
 
-  In temporal logic, `∀p: Proc, [](p ∈ crashed) → [](p ∈ s.crashed))`.
+  In temporal logic, `∀p: Proc, [](p ∈ crashed) → [](p ∈ crashed))`.
   -/
 lemma crashed_is_monotonic_in_fair_run
     (tr: Trace Proc)
@@ -194,13 +196,14 @@ lemma eventually_clock_is_t
     (t: ℕ):
       (∃ i: ℕ, (tr i).s.clock ≥ t) := by
   unfold is_fair_run at h_is_fair_run
-  have h_is_fair_run_copy := h_is_fair_run -- otherwise, h_is_fair_run is destroyed
+  have h_is_fair_run_copy := h_is_fair_run
+    -- otherwise, h_is_fair_run is destroyed
   rcases h_is_fair_run_copy with ⟨ h_is_run, _, _, h_is_fair_clock ⟩
   unfold is_run at h_is_run
   rcases h_is_run with ⟨ h_init, h_is_path ⟩
   unfold init at h_init; unfold is_fair_clock at h_is_fair_clock
   induction t with
-  | zero => use 0; simp [h_init]
+  | zero => exists 0; simp [h_init]
   | succ t ih =>
     rcases ih with ⟨ i, h_i ⟩
     -- assume on contrary that the clock value never goes above `t`
@@ -208,7 +211,8 @@ lemma eventually_clock_is_t
     simp at h_clock_le_t
 
     specialize h_is_fair_clock i
-    rcases h_is_fair_clock with ⟨ j, h_j_clock_advances ⟩ -- clock advances at `j > i`
+    rcases h_is_fair_clock with ⟨ j, h_j_clock_advances ⟩
+      -- clock advances at `j > i`
 
     unfold is_path at h_is_path
     specialize h_is_path (j - 1)
@@ -238,7 +242,8 @@ lemma eventually_alive_is_empty
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (p: Proc)
-    (h_p_never_crashes: never_crashes tr p) (k: ℕ)
+    (h_p_never_crashes: never_crashes tr p)
+    (k: ℕ)
     (h_i_positive: k > 0):
       ∃ i: ℕ, (tr (k + i)).s.alive[p]! = ∅ := by
   rcases h_is_fair_run with
@@ -260,7 +265,9 @@ lemma eventually_alive_is_empty
   simp at h_is_path
   unfold timeout at h_is_path
   -- extract the update of the set `alive[p]!`
-  rcases h_is_path with ⟨ _, _, _, _, _, h_alive_updated, _ ⟩
+  have h_alive_updated:
+    (tr (k + j)).s.alive = (tr (k + j - 1)).s.alive.insert p ∅ := by
+      simp [h_is_path]
   have h_alive_is_empty: (tr (k + j)).s.alive[p]! = ∅ := by
     simp [h_alive_updated]
   exact ⟨ j, h_alive_is_empty ⟩
@@ -280,7 +287,7 @@ lemma when_clock_is_positive_step_is_non_init
   unfold is_run at h_is_run
   rcases h_is_run with ⟨ h_init, _ ⟩
   unfold init at h_init
-  rcases h_init with ⟨ _, _, _, _, h_clock_is_zero, _ ⟩
+  have h_clock_is_zero: (tr 0).s.alive = init_map Proc ∅ := by simp only [h_init]
   by_contra h_i_is_zero
   simp at h_i_is_zero
   rw [h_i_is_zero] at h_clock_is_positive
@@ -318,9 +325,8 @@ lemma no_sent_from_the_future
     cases h: a with
     | Init => -- apply `h_s` directly
       simp [h] at h_next; rw [h_next];
-      simp [h_next] at h_m_in_sent
-      simp [h_m_in_sent] at h_s
-      exact h_s
+      rw [h_next] at h_m_in_sent
+      exact h_s h_m_in_sent
 
     | AdvanceClock =>
       -- `s'.sent = s.sent` and `s'.clock = s.clock + 1`, so we apply `h_s` and `linarith`
@@ -328,10 +334,9 @@ lemma no_sent_from_the_future
       unfold advance_clock at h_next
       have h_keep_sent: s'.sent = s.sent := by simp [h_next]
       have h_inc_clock: s'.clock = s.clock + 1 := by simp [h_next]
-      rw [h_keep_sent] at h_m_in_sent
-      specialize h_s h_m_in_sent
       rw [h_inc_clock]
-      linarith [h_s]
+      rw [h_keep_sent] at h_m_in_sent
+      linarith [h_s h_m_in_sent]
 
     | Crash _ | RcvHeartbeatReply _ _ _ =>
       -- `s'.sent = s.sent` and `s'.clock = s.clock`, so we apply `h_s`
@@ -368,12 +373,10 @@ lemma no_sent_from_the_future
       | inl h_in_old =>
         -- `m` is old, so `m.timestamp ≤ s.clock` by the inductive hypothesis `h_s`
         rw [h_keep_clock]
-        specialize h_s h_in_old
-        exact h_s
+        exact h_s h_in_old
       | inr h_in_new =>
         -- m is new, apply h_all_new_msgs
-        specialize h_all_new_msgs m h_in_new
-        exact h_all_new_msgs
+        apply h_all_new_msgs m h_in_new
 
     | RcvHeartbeatRequest src dst ts =>
       -- `s'.sent = s.sent ∪ { reply }`. Show that `reply` satisfies `P`.
@@ -446,8 +449,7 @@ lemma crashed_process_does_not_send
       exact h_is_path (k + i)
     have h_p_crashed_at_s := h_p_crashed_later i
     -- If `m.src = p`, then `m ∈ s.sent`
-    unfold next_a at h_next;
-    unfold advance_clock crash rcv_heartbeat_reply at h_next;
+    unfold next_a advance_clock crash rcv_heartbeat_reply at h_next;
     have h_m_in_old_sent : m.src = p → m ∈ s.sent := by
       intro h_src
       cases h_a: a with
@@ -467,9 +469,10 @@ lemma crashed_process_does_not_send
           rw [h_eq] at h_next
           unfold s at h_next
           simp [h_p_crashed_at_s] at h_next
-        let newSent := Finset.image (fun r => {
+        let newSent: Finset (Msg Proc) :=
+          Finset.image (fun r => {
             kind := MsgTag.HeartbeatRequest, src := q, dst := r,
-            timestamp := s.clock : Msg Proc
+            timestamp := s.clock
           }) Finset.univ
         have h_update_sent: s'.sent = s.sent ∪ newSent := by
           unfold newSent
@@ -514,13 +517,13 @@ lemma crashed_process_does_not_send
           | inl h_in_sent => simp [h_in_sent]
           | inr h_eq_reply => simp [Finset.mem_singleton.mp h_eq_reply]
         -- `m` cannot be `reply`, as `reply.src = dst` and `dst ≠ p`
-        have : m ≠ reply := by
+        have h_m_ne_reply: m ≠ reply := by
           by_contra h_eq_reply
           unfold reply at h_eq_reply
           simp [h_eq_reply] at h_src
           rw [h_src] at h_dst_ne_p
           simp at h_dst_ne_p
-        simp [this] at h_m_in_sent_or_reply
+        simp [h_m_ne_reply] at h_m_in_sent_or_reply
         exact h_m_in_sent_or_reply
     -- apply the inductive hypothesis `ih`
     simp [h_src] at h_m_in_old_sent
@@ -530,7 +533,7 @@ lemma crashed_process_does_not_send
   For every fair run, if `p` never crashes and `q` does,
   then `p` never registers `q` as alive from some point on.
 
-  In temporal logic, `([]p ∉ crashed ∧ <>q ∈ crashed) → <>[](q ∉ alive[p])`.
+  In temporal logic, `([](p ∉ crashed) ∧ <>(q ∈ crashed)) → <>[](q ∉ alive[p])`.
   -/
 lemma eventually_crashes_implies_never_alive
     (tr: Trace Proc)
@@ -559,7 +562,7 @@ lemma eventually_crashes_implies_never_alive
     have h_clock_order := clock_is_monotonic_in_fair_run InitDelay GST MsgDelay
       tr h_is_fair_run at_magic_time at_q_crashed h_order
     linarith [h_clock_order, h_clock_at_magic_time]
-  -- we have to show this auxilliary to make `eventually_alive_is_empty` work
+  -- we need `h_clock_is_positive` to make `eventually_alive_is_empty` work
   have h_clock_is_positive: (tr at_magic_time).s.clock > 0 := by omega
   have h_positive := when_clock_is_positive_step_is_non_init
     InitDelay GST MsgDelay tr h_is_fair_run at_magic_time h_clock_is_positive
@@ -611,12 +614,12 @@ lemma eventually_crashes_implies_never_alive
         simp [h] at h_is_path
         simp [h_is_path, ih] at h_contra
       case AdvanceClock | RcvHeartbeatRequest _ _ _ | Crash _ =>
-        simp [h] at h_is_path
-        have h_eq: s'.alive = s.alive := by simp [h_is_path]
+        simp only [h] at h_is_path
+        have h_eq: s'.alive = s.alive := by simp only [h_is_path]
         rw [h_eq] at h_contra
-        simp [ih] at h_contra
+        simp only [ih] at h_contra
       case Timeout q =>
-        simp [h] at h_is_path
+        simp only [h] at h_is_path
         unfold timeout at h_is_path
         -- since `Timeout` updates `alive`, we have to do case analysis on `q = p`
         by_cases h_eq: q = p
@@ -626,13 +629,12 @@ lemma eventually_crashes_implies_never_alive
           simp [h_alive_empty] at h_contra
         case neg =>
           have h_alive_unchanged: s'.alive[p]! = s.alive[p]! := by
-            have :s'.alive = s.alive.insert q ∅ := by simp [h_is_path]
-            simp [this, Std.HashMap.getElem!_insert]
-            simp [h_eq]
-          simp [h_alive_unchanged, ih] at h_contra
+            have h_emp: s'.alive = s.alive.insert q ∅ := by simp [h_is_path]
+            simp [h_emp, Std.HashMap.getElem!_insert, h_eq]
+          simp only [h_alive_unchanged, ih] at h_contra
       case RcvHeartbeatReply src dst ts =>
         -- this must be the hardest case
-        simp [h] at h_is_path
+        simp only [h] at h_is_path
         unfold rcv_heartbeat_reply at h_is_path
         have h_update: s'.alive = s.alive.insert dst (s.alive[dst]! ∪ {src}) :=
           by simp [h_is_path]
@@ -644,8 +646,7 @@ lemma eventually_crashes_implies_never_alive
           case neg =>
             -- since `q ≠ src`, we have `q ∉ s'.alive[p]!`
             rw [h_p_eq_dst] at h_contra
-            simp [Std.HashMap.getElem!_insert] at h_contra
-            simp [h_q_eq_src, ih] at h_contra
+            simp [Std.HashMap.getElem!_insert, h_q_eq_src, ih] at h_contra
           case pos =>
             -- `q = src` is the hardest case. We have to show that the crashed `q`
             -- could not send a heartbeat to `p` at this point.
@@ -668,7 +669,7 @@ lemma eventually_crashes_implies_never_alive
               -- since `at_magic_time ≥ at_q_crashed`, we can find such `i`
               have h: at_magic_time + at_alive_empty + k ≥ at_q_crashed := by
                 linarith [h_magic_time_after_q_crashed]
-              use at_magic_time + at_alive_empty + k - at_q_crashed
+              exists at_magic_time + at_alive_empty + k - at_q_crashed
               simp [h]
             rcases h_i with ⟨ i, h_i_eq ⟩
             specialize h_q_does_not_send i reply
@@ -678,12 +679,10 @@ lemma eventually_crashes_implies_never_alive
             have h_src_eq_q: src = q := by simp [h_q_eq_src]
             -- show that timestamp `ts` is not later than the clock at `at_q_crashed`
             have h_ts_before_crash: ts ≤ (tr at_q_crashed).s.clock := by
-              simp [h_src_eq_q] at h_q_does_not_send
-              rw [h_i_eq] at h_q_does_not_send
+              simp [h_src_eq_q, h_i_eq] at h_q_does_not_send
               unfold reply s at h_reply_in_sent
               rw [h_src_eq_q] at h_reply_in_sent
-              simp [h_reply_in_sent] at h_q_does_not_send
-              exact h_q_does_not_send
+              exact h_q_does_not_send h_reply_in_sent
             -- we derive an upper bound and a lower bound on `s.clock`
             have h_clock_upper_bound:
                 s.clock ≤ max (GST + MsgDelay) (clock_at_q_crashed + MsgDelay) := by omega
@@ -701,12 +700,10 @@ lemma eventually_crashes_implies_never_alive
             linarith [h_clock_lower_bound, h_clock_upper_bound]
         case neg =>
           -- `p ≠ dst`, so `s'.alive[p]! = s.alive[p]!`
-          simp [Std.HashMap.getElem!_insert] at h_contra
-          simp [h_p_eq_dst] at h_contra
-          simp [ih] at h_contra
+          simp [Std.HashMap.getElem!_insert, h_p_eq_dst, ih] at h_contra
   -- simply use `at_magic_time + at_alive_empty` as a witness of `i`
   have : eventually_never_alive tr p q := by
-    use at_magic_time + at_alive_empty
+    exists at_magic_time + at_alive_empty
   exact this
 
 /--
@@ -750,8 +747,7 @@ lemma eventually_crashes_implies_always_suspected
     unfold timeout at h_next
     simp [h_next]
     -- `q` is not in `alive[p]!`, so it is suspected
-    specialize h_never_alive j
-    simp [h_never_alive]
+    exact h_never_alive j
   -- now prove by induction that `q` is suspected at all later points
   have h_q_is_always_suspected:
       ∀ i: ℕ, q ∈ (tr (k + 1 + j + i)).s.suspected[p]! := by
@@ -770,8 +766,8 @@ lemma eventually_crashes_implies_always_suspected
       let s := (tr (k + 1 + j + i)).s
       let s' := (tr (k + 1 + j + i + 1)).s
       -- do case analysis on the action `a`
-      unfold next_a at h_is_path
-      unfold advance_clock crash rcv_heartbeat_request rcv_heartbeat_reply at h_is_path
+      unfold next_a advance_clock crash
+             rcv_heartbeat_request rcv_heartbeat_reply at h_is_path
       cases h_a: (tr (k + 1 + j + i + 1)).a with
       | Init =>
         simp [h_a] at h_is_path
@@ -809,7 +805,7 @@ lemma eventually_crashes_implies_always_suspected
           simp [this, h_never_alive]
   -- now apply h_suspected_always to get the result
   unfold eventually_q_is_always_suspected q_is_always_suspected
-  use k + 1 + j
+  exists k + 1 + j
 
 /--
   For a set of crashing processes `C` and a trace `tr`, show that if for every
@@ -836,7 +832,7 @@ lemma eventually_always_suspected_meet
   let Correct := Finset.univ \ Crashed
   -- we have to bubble up `∃ k: ℕ` two times
   -- bubble up `∃ k: ℕ` the first time
-  have bubble1: (q: Proc) → (h_q_crashed: q ∈ Crashed) →
+  have bubble_once: (q: Proc) → (h_q_crashed: q ∈ Crashed) →
       ∃ k: ℕ, ∀ i: ℕ, ∀ p ∈ Correct, q ∈ (tr (k + i)).s.suspected[p]! := by
     intro q h_q_crashed
     specialize h_suspected q h_q_crashed
@@ -846,7 +842,7 @@ lemma eventually_always_suspected_meet
   let P (i: ℕ) (q: Proc) :=
     ∀ p ∈ Correct, q ∈ (tr i).s.suspected[p]!
   -- bubble up `∃ k: ℕ` the second time
-  exact forall_FG_implies_FG_forall P Crashed bubble1
+  exact forall_FG_implies_FG_forall P Crashed bubble_once
 
 /--
   Strong completeness holds for every fair run.
@@ -885,8 +881,7 @@ theorem strong_completeness
       ∀ q ∈ Crashed,
         ∀ p ∈ Correct,
           eventually_q_is_always_suspected tr p q := by
-    intro q q_in_Crashed
-    intro p p_in_Correct
+    intro q q_in_Crashed p p_in_Correct
     have h_q_crashes := h_all_in_Crashed_crash q q_in_Crashed
     have h_p_never_crashes := h_correct_never_crash p p_in_Correct
     apply eventually_crashes_implies_always_suspected InitDelay GST MsgDelay
@@ -896,7 +891,7 @@ theorem strong_completeness
     eventually_always_suspected_meet tr Crashed h_suspected
   -- we are almost there, just transform `h_suspected_meet` a bit
   rcases h_suspected_meet with ⟨k, h_q_suspected_by_p⟩
-  use k
+  exists k
   intro i p q ⟨p_not_crashed, q_is_crashed⟩
   have p_is_correct: p ∈ Correct := by unfold Correct; simp [p_not_crashed]
   exact h_q_suspected_by_p i q q_is_crashed p p_is_correct
@@ -937,28 +932,28 @@ theorem next_a_iff_next
   . intro h_next
     cases h_next
     case inl h_stutter =>
-      use Action.Init
+      exists Action.Init
     case inr h =>
       cases h
       case inl h_advance_clock =>
-        use Action.AdvanceClock
+        exists Action.AdvanceClock
 
       case inr h =>
         rcases h with ⟨p, h⟩
         cases h
         case inl h_timeout =>
-          use Action.Timeout p
+          exists Action.Timeout p
 
         case inr h =>
           cases h
           case inl h_crash =>
-            use Action.Crash p
+            exists Action.Crash p
 
           case inr h =>
             rcases h with ⟨q, t, h⟩
             cases h
-            case inl h_rcv_heartbeat_req => use Action.RcvHeartbeatRequest p q t
-            case inr h_rcv_heartbeat_reply => use Action.RcvHeartbeatReply p q t
+            case inl h_rcv_heartbeat_req => exists Action.RcvHeartbeatRequest p q t
+            case inr h_rcv_heartbeat_reply => exists Action.RcvHeartbeatReply p q t
 
   . intro h_next_a
     rcases h_next_a with ⟨a, h_next_a⟩
@@ -968,8 +963,8 @@ theorem next_a_iff_next
     | Action.Timeout p | Action.Crash p =>
       simp at h_next_a
       repeat apply Or.inr
-      use p; simp [h_next_a]
+      exists p; simp [h_next_a]
     | Action.RcvHeartbeatRequest p q t | Action.RcvHeartbeatReply p q t =>
       repeat apply Or.inr
-      use p; repeat apply Or.inr
-      use q; use t; simp [h_next_a]
+      exists p; repeat apply Or.inr
+      exists q; exists t; simp [h_next_a]
