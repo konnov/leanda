@@ -271,18 +271,17 @@ def states_of_trace (tr: Trace Proc) :=
   is received by every correct process `q` at the right time window later.
   -/
 def is_reliable_communication (tr: Trace Proc) : Prop :=
-  ∀ i: ℕ,
-    ∀ m ∈ (tr i).s.sent,
-      ∃ j: ℕ,
-        let { s := s_j, a := a_j } := (tr j)
-        j ≥ i
-          ∧ isMsgTimely GST MsgDelay m.timestamp s_j.clock
+  ∀ k: ℕ,
+    ∀ m ∈ (tr k).s.sent,
+      ∃ i: ℕ,
+        let { s := s_j, a := a_j } := tr (k + i)
+        isMsgTimely GST MsgDelay m.timestamp s_j.clock
           ∧ m.dst ∈ s_j.crashed
             ∨ match m.kind with
-              | MsgTag.HeartbeatReply =>
-                  a_j = Action.RcvHeartbeatReply m.src m.dst m.timestamp
-              | MsgTag.HeartbeatRequest =>
-                  a_j = Action.RcvHeartbeatRequest m.src m.dst m.timestamp
+            | MsgTag.HeartbeatReply =>
+                a_j = Action.RcvHeartbeatReply m.src m.dst m.timestamp
+            | MsgTag.HeartbeatRequest =>
+                a_j = Action.RcvHeartbeatRequest m.src m.dst m.timestamp
 
 /--
   Does a sequence of states `seq` process timeouts fairly?
