@@ -143,9 +143,9 @@ lemma clock_is_monotonic_in_fair_run
   rcases this with ⟨ k, rfl ⟩
   induction k with
   | zero => simp
-  | succ k ik =>
+  | succ k kh =>
     have h: i + k ≥ i := by linarith
-    simp [h] at ik
+    simp [h] at kh
     unfold is_fair_run at h_is_fair_run
     rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
     unfold is_run at h_is_run
@@ -157,7 +157,7 @@ lemma clock_is_monotonic_in_fair_run
       clock_is_monotonic_in_one_step InitDelay GST MsgDelay
         (tr (i + k)).s (tr (i + k + 1)).s (tr (i + k + 1)).a h_is_path
     -- now just apply transitivity
-    exact le_trans ik h_last_step_mono
+    exact le_trans kh h_last_step_mono
 
 /--
   The set `crashed` grows monotonically in a fair run.
@@ -171,7 +171,7 @@ lemma crashed_is_monotonic_in_fair_run
       p ∈ (tr (k + i)).s.crashed := by
   induction i with
   | zero => exact h_p_crashed
-  | succ i ii =>
+  | succ i ih =>
     unfold is_fair_run at h_is_fair_run
     rcases h_is_fair_run with ⟨ h_is_run, _ ⟩
     unfold is_run at h_is_run
@@ -182,7 +182,7 @@ lemma crashed_is_monotonic_in_fair_run
     have h_last_step_mono :=
       crashed_is_monotonic_in_one_step InitDelay GST MsgDelay
         (tr (k + i)).s (tr (k + i + 1)).s (tr (k + i + 1)).a h_is_path
-    exact h_last_step_mono ii
+    exact h_last_step_mono ih
 
 /--
   Every fair run covers every clock value `t`. Note that this requires fairness.
