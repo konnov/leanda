@@ -304,17 +304,17 @@ def is_fair_clock (tr: Trace Proc) : Prop :=
       j > i ∧ (tr j).a = Action.AdvanceClock
 
 /--
-  An infinite sequence of protocol states is a path, if every pair
-  of states `(s_i, s_{i+1})` is a transition via `next`.
-  A path does not have to start with an initial state.
+  An trace is a path, if every pair of state-action pairs `((s_i, _), (s_{i+1},
+  a_{i+1})` is a transition via `next_a`. A path does not have to start with an
+  initial state.
   -/
 def is_path (tr: Trace Proc) : Prop :=
   ∀ i: ℕ,
     next_a Proc InitDelay GST MsgDelay (tr i).s (tr (i + 1)).s (tr (i + 1)).a
 
 /--
-  An infinite sequence of protocol states is a run, if it starts
-  with an initial states and it is a run.
+  A trace is a (protocol) run, if it starts with an initial states,
+  and it is a path.
   -/
 def is_run (tr: Trace Proc) : Prop :=
   let s0 := (tr 0).s
@@ -322,7 +322,7 @@ def is_run (tr: Trace Proc) : Prop :=
     ∧ is_path Proc InitDelay GST MsgDelay tr
 
 /--
-  Does a sequence of states `seq` represent a fair run of the protocol?
+  Does a trace constitute a fair run of the protocol?
   -/
 def is_fair_run (tr: Trace Proc) : Prop :=
   is_run Proc InitDelay GST MsgDelay tr
