@@ -641,6 +641,9 @@ lemma eventually_crashes_implies_never_alive
         rw [h_update] at h_contra
         -- consider the cases on `dst = p` and `src = q`
         by_cases h_p_eq_dst: dst = p
+        case neg =>
+          -- `p ≠ dst`, so `s'.alive[p]! = s.alive[p]!`
+          simp [Std.HashMap.getElem!_insert, h_p_eq_dst, ih] at h_contra
         case pos =>
           by_cases h_q_eq_src: q = src
           case neg =>
@@ -698,9 +701,6 @@ lemma eventually_crashes_implies_never_alive
             unfold magic_time at h_clock_lower_bound
             -- now the upper bound is smaller than the lower bound, contradiction!
             linarith [h_clock_lower_bound, h_clock_upper_bound]
-        case neg =>
-          -- `p ≠ dst`, so `s'.alive[p]! = s.alive[p]!`
-          simp [Std.HashMap.getElem!_insert, h_p_eq_dst, ih] at h_contra
   -- simply use `at_magic_time + at_alive_empty` as a witness of `i`
   have : eventually_never_alive tr p q := by
     exists at_magic_time + at_alive_empty

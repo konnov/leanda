@@ -303,7 +303,7 @@ def is_fair_clock (tr: Trace Proc) : Prop :=
       j > i ∧ (tr j).a = Action.AdvanceClock
 
 /--
-  An trace is a path, if every pair of state-action pairs `((s_i, _), (s_{i+1},
+  A trace is a path, if every pair of state-action pairs `((s_i, _), (s_{i+1},
   a_{i+1})` is a transition via `next_a`. A path does not have to start with an
   initial state.
   -/
@@ -312,7 +312,7 @@ def is_path (tr: Trace Proc) : Prop :=
     next_a Proc InitDelay GST MsgDelay (tr i).s (tr (i + 1)).s (tr (i + 1)).a
 
 /--
-  A trace is a (protocol) run, if it starts with an initial states,
+  A trace is a (protocol) run, if it starts with an initial state,
   and it is a path.
   -/
 def is_run (tr: Trace Proc) : Prop :=
