@@ -845,9 +845,9 @@ lemma eventually_always_suspected_meet
   exact forall_FG_implies_FG_forall P Crashed bubble_once
 
 /--
-  Strong completeness holds for every fair run.
+  Eventual strong completeness holds for every fair run.
   -/
-theorem strong_completeness
+theorem eventual_strong_completeness
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (Crashed: Finset Proc)
@@ -899,24 +899,42 @@ theorem strong_completeness
 /--
   Show that the property `is_strongly_complete` holds on fair runs.
   -/
-theorem strong_completeness_on_states
+theorem eventual_strong_completeness_on_states
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (Crashed: Finset Proc):
-      is_strongly_complete Proc Crashed (states_of_trace Proc tr) := by
-  unfold is_strongly_complete states_of_trace
+      is_eventually_strongly_complete Proc Crashed (states_of_trace Proc tr) := by
+  unfold is_eventually_strongly_complete states_of_trace
   intro h_crashed
   have h_is_crashing_set: is_crashing_set tr Crashed := by exact h_crashed
-  exact strong_completeness InitDelay GST MsgDelay
+  exact eventual_strong_completeness InitDelay GST MsgDelay
     tr h_is_fair_run Crashed h_is_crashing_set
 
-/-
-/-- Strong completeness hold for every run. -/
-theorem eventual_strong_accuracy (tr: Trace Proc)
-    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay run):
-      (is_eventually_strongly_accurate tr) := by
+/-- Strong accuracy eventually holds true for every fair run. -/
+theorem eventual_strong_accuracy
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (Crashed: Finset Proc)
+    (h_is_crashing_set: is_crashing_set tr Crashed):
+      ∃ k: ℕ,
+        ∀ i: ℕ,
+          ∀ p q: Proc,
+            p ∉ Crashed ∧ q ∉ Crashed → q ∉ (tr (k + i)).s.suspected[p]! := by
   sorry
--/
+
+/--
+  Show that the property `is_eventually_strongly_accurate` holds on fair runs.
+  -/
+theorem eventual_strong_accuracy_on_states
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (Crashed: Finset Proc):
+      is_eventually_strongly_accurate Proc Crashed (states_of_trace Proc tr) := by
+  unfold is_eventually_strongly_accurate states_of_trace
+  intro h_crashed
+  have h_is_crashing_set: is_crashing_set tr Crashed := by exact h_crashed
+  exact eventual_strong_accuracy InitDelay GST MsgDelay
+    tr h_is_fair_run Crashed h_is_crashing_set
 
 /--
   Show equivalence of `s' = s ∨ next` and `next_a`. This is a technical theorem,

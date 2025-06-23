@@ -179,7 +179,7 @@ section properties
   happens to be hard to convince Lean that `C` exists in every fair run of the
   protocol. Hence, we work around this problem by supplying the set `C`.
   -/
-def is_strongly_complete
+def is_eventually_strongly_complete
     (Crashed: Finset Proc)
     (seq: ℕ → ProtocolState Proc): Prop :=
   (∀ p: Proc, p ∈ Crashed ↔ ∃ i: ℕ, p ∈ (seq i).crashed)
@@ -204,7 +204,7 @@ def is_eventually_strongly_accurate
     → ∃ k: ℕ,
         ∀ i: ℕ,
           ∀ p q: Proc,
-            p ∉ Crashed ∧ q ∉ Crashed → q ∉ (seq (i + k)).suspected[p]!
+            p ∉ Crashed ∧ q ∉ Crashed → q ∉ (seq (k + i)).suspected[p]!
 
 end properties
 
