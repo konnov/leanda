@@ -194,7 +194,7 @@ lemma eventually_clock_is_t
     (tr: Trace Proc)
     (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
     (t: ℕ):
-      (∃ i: ℕ, (tr i).s.clock ≥ t) := by
+      ∃ i: ℕ, (tr i).s.clock ≥ t := by
   unfold is_fair_run at h_is_fair_run
   have h_is_fair_run_copy := h_is_fair_run
     -- otherwise, h_is_fair_run is destroyed
@@ -909,6 +909,123 @@ theorem eventual_strong_completeness_on_states
   have h_is_crashing_set: is_crashing_set tr Crashed := by exact h_crashed
   exact eventual_strong_completeness InitDelay GST MsgDelay
     tr h_is_fair_run Crashed h_is_crashing_set
+
+/--
+  Process `q` is infinitely often suspected by process `p` in a trace `tr`.
+  -/
+def inf_often_suspected
+    (tr: Trace Proc)
+    (p q: Proc): Prop :=
+  ∀ k: ℕ,
+    ∃ i: ℕ,
+      q ∈ (tr (k + i)).s.suspected[p]!
+
+lemma next_timeout_ge_clock
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (p: Proc)
+    (h_p_is_correct: never_crashes tr p):
+      ∀ i: ℕ, (tr i).s.nextTimeout[p]! ≥ (tr i).s.clock := by
+  sorry
+
+lemma next_timeout_monotone
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (p: Proc)
+    (h_p_is_correct: never_crashes tr p):
+      ∀ k i: ℕ,
+        (tr (k + i)).s.nextTimeout[p]! ≥ (tr k).s.nextTimeout[p]! := by
+  sorry
+
+lemma suspected_implies_timeout_in_past
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (p q: Proc)
+    (h_p_is_correct: never_crashes tr p)
+    (j: ℕ)
+    (h_p_suspects_q: q ∈ (tr j).s.suspected[p]!):
+      ∃ i: ℕ,
+        i < j
+          ∧ q ∉ (tr i).s.alive[p]!
+          ∧ (tr i).s.nextTimeout[p]! ≥ (tr j).s.clock
+          ∧ q ∈ (tr (i + 1)).s.suspected[p]!
+          ∧ (tr (i + 1)).a = Action.Timeout p
+      := by
+  sorry
+
+/--
+  If `p` is suspected infinitely often by `q`, then there is a point
+  when `p` times out and `q` is not alive at that point.
+  -/
+lemma eventually_not_alive_on_timeout
+    (tr: Trace Proc)
+    (h_is_fair_run: is_fair_run Proc InitDelay GST MsgDelay tr)
+    (p q: Proc)
+    (h_p_is_correct: never_crashes tr p)
+    (h_inf_often_suspected: inf_often_suspected tr p q):
+      ∀ k: ℕ,
+        ∃ i: ℕ,
+          (tr (k + i + 1)).a = Action.Timeout p ∧ q ∉ (tr (k + i)).s.alive[p]! := by
+  -- Effort: 2.5h
+  -- Consider an arbitrary point `k`.
+  intro k
+  -- Get the clock value `c` slightly after the next timeout of `p` after `k`.
+  -- This gives us room for finding another point where `q ∈ suspected[p]!` after a timeout.
+  let c := (tr k).s.nextTimeout[p]! + 1
+  have h_c_after_clock_at_k: c > (tr k).s.clock := by
+    unfold c
+    linarith [next_timeout_ge_clock InitDelay GST MsgDelay tr h_is_fair_run p h_p_is_correct k]
+  -- find a point where the clock is reaches `c`
+  rcases eventually_clock_is_t InitDelay GST MsgDelay tr h_is_fair_run c
+    with ⟨at_c, h_clock_at_c⟩
+  have h_at_c_after_k: at_c ≥ k := by
+    by_contra h_contra
+    have h_k_after_at_clock_inc: k ≥ at_c := by linarith [h_contra]
+    have h_clock_order :=
+      clock_is_monotonic_in_fair_run
+        InitDelay GST MsgDelay tr h_is_fair_run at_c k h_k_after_at_clock_inc
+    linarith
+  -- now, find a point `at_c + j ≥ k` where `q` is suspected by `p`
+  unfold inf_often_suspected at h_inf_often_suspected
+  have h_q_suspected := h_inf_often_suspected at_c
+  rcases h_q_suspected with ⟨j, h_q_suspected⟩
+  have h_j_after_k: (at_c + j) ≥ k := by linarith [h_at_c_after_k]
+  -- go back into the past to find the latest timeout before `at_c + j`
+  have h_timeout := suspected_implies_timeout_in_past
+    InitDelay GST MsgDelay tr h_is_fair_run p q h_p_is_correct (at_c + j) h_q_suspected
+  rcases h_timeout with
+    ⟨at_to, ⟨h_to_before, h_not_alive, h_next_to_later, h_p_suspects_q, h_a_is_to⟩⟩
+  -- show that the timeout value has advanced in comparison to `k`
+  have h_to_order:
+      (tr at_to).s.nextTimeout[p]! ≥ (tr k).s.nextTimeout[p]! + 1 := by
+    -- apply transitivity several times
+    calc
+      (tr at_to).s.nextTimeout[p]! ≥ (tr (at_c + j)).s.clock := by
+        exact h_next_to_later
+      _ ≥ (tr at_c).s.clock := by
+        have h_order: at_c + j ≥ at_c := by linarith
+        exact clock_is_monotonic_in_fair_run InitDelay GST MsgDelay
+            tr h_is_fair_run at_c (at_c + j) h_order
+      _ ≥ (tr k).s.nextTimeout[p]! + 1 := by
+        exact h_clock_at_c
+  -- finally, show that the timeout point `at_to` is after `k`
+  have h_k_before_to: k < at_to := by
+    by_contra h_contra
+    simp at h_contra
+    have h_i: ∃ i: ℕ, (at_to + i) = k := by
+      exists k - at_to
+      simp [h_contra]
+    rcases h_i with ⟨i, h_i_def⟩
+    have h_to_order2 := next_timeout_monotone InitDelay GST MsgDelay
+        tr h_is_fair_run p h_p_is_correct at_to i
+    rw [← h_i_def] at h_to_order
+    linarith [h_to_order, h_to_order2]
+  -- simply use `at_to - k` as `i`
+  use at_to - k
+  have h_simpl: k + (at_to - k) = at_to := by
+    have h_order: k ≤ at_to := by linarith [h_k_before_to]
+    rw [Nat.add_comm, Nat.sub_add_cancel h_order]
+  simp [h_simpl, h_not_alive, h_a_is_to]
 
 /-- Strong accuracy eventually holds true for every fair run. -/
 theorem eventual_strong_accuracy
