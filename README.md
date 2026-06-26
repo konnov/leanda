@@ -24,4 +24,11 @@ Available specifications:
    - [Temporal proofs by induction](./epfd/Epfd/PropositionalProofs.lean):
      - [x] *strong completeness*
      - [ ] *strong accuracy* is work in progress
+
+ - [Ben-Or in Lean](./Ben-Or/README.md): Byzantine consensus with an agreement
+   proof over generated Wunderspec definitions:
+
+   - [Ben-Or specificationin Lean](./Ben-Or/BenOr/Defs.lean) generated from [ben_or.py][]
+   - [Inductiveness and agreement proof](./Ben-Or/BenOr/Proofs.lean)
  
+[ben_or.py]: https://github.com/wunderspec/wunderspec/blob/main/examples/ben_or.py
