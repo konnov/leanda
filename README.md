@@ -30,5 +30,17 @@ Available specifications:
 
    - [Ben-Or specificationin Lean](./Ben-Or/BenOr/Defs.lean) generated from [ben_or.py][]
    - [Inductiveness and agreement proof](./Ben-Or/BenOr/Proofs.lean)
+
+ - [Single-decree Tendermint in Lean](./tendermint-single/TendermintSingle.lean):
+   Byzantine consensus with generated Wunderspec definitions and Lean proofs
+   transferred from TLAPS:
+
+   - [Protocol and inductive-invariant definitions](./tendermint-single/TendermintSingle/Defs.lean)
+     generated from [tendermint_single_indinv.py][]
+   - [`InitInd` and `NextInd` inductiveness proofs](./tendermint-single/TendermintSingle/Proofs/Inductive.lean)
+     transferred from [tendermint_single_indinv_proofs.tla][]
+   - [Lock lemma and agreement proof](./tendermint-single/TendermintSingle/Proofs/Agreement.lean)
  
 [ben_or.py]: https://github.com/wunderspec/wunderspec/blob/main/examples/ben_or.py
+[tendermint_single_indinv.py]: https://github.com/konnov/wunderspec/blob/main/examples/tendermint_single_indinv.py
+[tendermint_single_indinv_proofs.tla]: https://github.com/konnov/apalache-examples/blob/main/tendermint/tendermint_single_indinv_proofs.tla
