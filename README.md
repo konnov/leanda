@@ -31,7 +31,7 @@ Available specifications:
    - [Ben-Or specification in Lean](./Ben-Or/BenOr/Defs.lean) generated from [ben_or.py][]
    - [Inductiveness and agreement proof](./Ben-Or/BenOr/Proofs.lean)
 
- - [Single-height Tendermint in Lean](./tendermint-single/TendermintSingle.lean):
+ - [Single-height Tendermint in Lean](./tendermint-single/README.md):
    Byzantine consensus with generated Wunderspec definitions and Lean proofs
    transferred from TLAPS by Codex GPT 5.6, accompanied with the [blog post][tendermint blog]:
 
