@@ -18,7 +18,7 @@ Available specifications:
    - [Safety proofs via inductive invariants](./twophase/Twophase/InductiveProofs.lean)
 
  - [EPFD in Lean](./epfd/README.md): An eventually perfect failure detector
-   under partial synchrony:
+   under partial synchrony, accompanied with the [blog post][epfd blog]:
  
    - [Propositional specification](./epfd/Epfd/Propositional.lean)
    - [Temporal proofs by induction](./epfd/Epfd/PropositionalProofs.lean):
@@ -26,14 +26,14 @@ Available specifications:
      - [ ] *strong accuracy* is work in progress
 
  - [Ben-Or in Lean](./Ben-Or/README.md): Byzantine consensus with an agreement
-   proof over generated Wunderspec definitions:
+   proof over generated Wunderspec definitions, accompanied with the [blog post][ben-or blog]:
 
-   - [Ben-Or specificationin Lean](./Ben-Or/BenOr/Defs.lean) generated from [ben_or.py][]
+   - [Ben-Or specification in Lean](./Ben-Or/BenOr/Defs.lean) generated from [ben_or.py][]
    - [Inductiveness and agreement proof](./Ben-Or/BenOr/Proofs.lean)
 
  - [Single-height Tendermint in Lean](./tendermint-single/TendermintSingle.lean):
    Byzantine consensus with generated Wunderspec definitions and Lean proofs
-   transferred from TLAPS by Codex GPT 5.6:
+   transferred from TLAPS by Codex GPT 5.6, accompanied with the [blog post][tendermint blog]:
 
    - [Protocol and inductive-invariant definitions](./tendermint-single/TendermintSingle/Defs.lean)
      generated from [tendermint_single_indinv.py][]
@@ -42,5 +42,8 @@ Available specifications:
    - [Lock lemma and agreement proof](./tendermint-single/TendermintSingle/Proofs/Agreement.lean)
  
 [ben_or.py]: https://github.com/wunderspec/wunderspec/blob/main/examples/ben_or.py
-[tendermint_single_indinv.py]: https://github.com/konnov/wunderspec/blob/main/examples/tendermint_single_indinv.py
+[epfd blog]: https://protocols-made-fun.com/lean-epfd-completeness.html
+[ben-or blog]: https://protocols-made-fun.com/proofs-are-closer.html
+[tendermint blog]: https://protocols-made-fun.com/tendermint-safety.html
+[tendermint_single_indinv.py]: https://github.com/wunderspec/wunderspec/blob/main/examples/tendermint_single_indinv.py
 [tendermint_single_indinv_proofs.tla]: https://github.com/konnov/apalache-examples/blob/main/tendermint/tendermint_single_indinv_proofs.tla
